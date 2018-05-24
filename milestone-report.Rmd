@@ -1,0 +1,343 @@
+---
+title: "Data Science Specialization Capstone Project<br>Milestone Report"
+author: "Maurício Collaça"
+date: "April 24, 2018"
+output: 
+  html_document: 
+    code_folding: hide
+    number_sections: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment = "")
+options(width = 120)
+```
+
+# Introduction
+
+The goal of this milestone report is to display what have been gotten by working with the sample data from the blogs, news and twitter texts provided by Swiftkey and demonstrate the project is on track to create the prediction algorithm.
+
+The motivation for this report is to:
+
+1. Demonstrate that the data have been successfully downloaded and loaded into a corpus.
+2. Create summary statistics about the data sets.
+3. Report any interesting findings.
+4. Get feedback on the plans for creating a prediction algorithm and a Shiny application.
+
+# Resources used
+
+Computer: Toshiba Satellite E55-A laptop
+
+* Operating System: Microsoft Windows 8.1 64-bit
+* Processor: Intel(R) Core(TM) i5-4200U CPU @2.30GHz
+* Cores: 2
+* Logical processors: 4
+* Installed memory (RAM): 16GB
+
+R libraries:
+
+```{r message=FALSE}
+packages <- c("parallel", "quanteda", "gridExtra", "ggplot2", "data.table")
+noquote(c(R=paste(R.Version()[6:7], collapse="."), sapply(packages, function(x) {library(x, character.only=T, logical.return=T); as.character(packageVersion(x))})))
+```
+
+# Getting Data
+
+Downloaded file:
+
+```{r}
+fileURL <- "https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip"
+dataDir <- "~/dsscapstone"
+zipFile <- "Coursera-SwiftKey.zip"
+zipfilePath <- file.path(dataDir, zipFile)
+if(!file.exists(zipfilePath)) download.file(fileURL, destfile=zipfilePath, cacheOK = FALSE)
+file.info(zipfilePath)[c(1,5)]
+```
+
+Compressed contents:
+
+```{r}
+(zipContents <- unzip(zipfilePath, list=TRUE))
+```
+
+Languages found:
+
+```{r}
+langFilePattern <- "^final/(.._..)/.._...+\\.txt$"
+unique(sub(langFilePattern, "\\1", grep(langFilePattern, zipContents$Name, value = TRUE)))
+```
+
+The scope of this project is the English language.  After uncompressing the English files and prior to build a corpus it is necessary to fix unexpected end of file caused by the `\032` character, only when running on Windows platforms, which is the case.
+
+```{r}
+unzipFiles <- sort(grep("^final/en_US/.._...+\\.txt$", zipContents$Name, value=T))
+files <- file.path(dataDir, basename(unzipFiles))
+docs <- sub(file.path(dataDir, "en_US\\.(.*)\\.txt$"), "\\1", files)
+if(!all(file.exists(files))) unzip(zipfilePath, files=unzipFiles, setTimes=T, exdir=dataDir, junkpath=T)
+fix.files <- function(f, basenamer = function(x) basename(x)) {
+    # binary open avoids unexpected end of file on readLines() on Windows platforms
+    con <- file(f, open = "rb")
+    # removing unexpected end of file character "\032" on Windows platforms
+    buffer <- gsub("\032", "", readLines(con, skipNul=TRUE))
+    close(con)
+    outFile <- file.path(dirname(f), basenamer(f))
+    con <- file(outFile, "wb")
+    writeLines(buffer, con)
+    close(con)
+    outFile
+}
+if(!file.exists(paste0(dataDir, "/fixed"))) {
+    cluster <- makeCluster(detectCores())
+    out <- parSapply(cluster, files, fix.files) #35s
+    stopCluster(cluster)
+    writeLines("", paste0(dataDir, "/fixed"))
+}
+```
+
+Summarize files via [GNU coreutils wc](http://www.gnu.org/software/coreutils/wc):
+
+```{r}
+wc <- function(paths) {
+    require(parallel)
+    cluster <- makeCluster(detectCores())
+    ret <- parSapplyLB(cluster, paths, function(x)
+        as.integer(unlist(strsplit(system(paste("wc -l -w -c -L", x), TRUE),"\\s+"))[2:5]))
+    stopCluster(cluster)
+    rownames(ret) <- c("lines", "words", "bytes", "longest.line")
+    data.frame(t(ret))
+}
+(wordcounts <- wc(files))
+c(colSums(wordcounts[1:3]), longest.line=max(wordcounts[4]))
+```
+
+# Exploratory Data Analysis
+
+As defined in [Wikipedia](https://en.wikipedia.org/wiki/N-gram), an n-gram is a contiguous sequence of n items from a given sample of text or speech.
+
+It's assumed that the optimal unit of a sample text to create n-grams is the text sentence, otherwise n-grams could be created crossing sentences, e.g., a bigram composed by the last word of a given sentence and the first word of the very next sentence.
+
+## Creating the corpus
+
+Creates one corpus per file, each corpus document containing a single line.
+
+```{r}
+for(i in seq_along(files)) {
+    corpus <- paste0(docs[i], ".corpus1")
+    corpusFile <- file.path(dataDir, paste0(corpus, ".rda"))
+    if(!file.exists(corpusFile)) { #62s
+        buffer <- readLines(files[i], skipNul=TRUE, encoding = "UTF-8")
+        tmp <- corpus(buffer)
+        docnames(tmp) <- NULL
+        assign(corpus, tmp)
+        rm(buffer, tmp)
+        save(list=corpus, file=corpusFile, compress = FALSE)
+    } else load(corpusFile) #43s
+}
+```
+
+Summary
+
+```{r}
+summary.corpora <- function(corpus.names) {
+    bind_rows(lapply(corpus.names, function(corpus.name) {
+        corpus <- get(corpus.name)
+        data.frame(Corpus = corpus.name,
+                   Documents = ndoc(corpus),
+                   Sentences = sum(nsentence(corpus)),
+                   Tokens = sum(ntoken(corpus, remove_punct=TRUE)),
+                   Megabytes = round(as.numeric(object.size(corpus))/1024/1024),
+                   stringsAsFactors = FALSE)
+    }))
+}
+summariesFile <- file.path(dataDir, "corpora1.summary.rda")
+if(!file.exists(summariesFile)) {
+    corpora1.summary <- summary.corpora(paste0(docs,".corpus1")) #42min
+    save(corpora1.summary, file=summariesFile, compress=FALSE)
+} else load(summariesFile)
+corpora1.summary
+colSums(corpora1.summary[,-1])
+```
+
+<!-- ## Reshaping the corpus from document to sentences -->
+
+```{r}
+# for(i in seq_along(files)) {
+#     corpus1 <- paste0(docs[i], ".corpus1")
+#     corpus2 <- paste0(docs[i], ".corpus2")
+#     corpusFile <- file.path(dataDir, paste0(corpus2, ".rda"))
+#     if(!file.exists(corpusFile)) { #33min
+#         tmp <- corpus_reshape(get(corpus1), to="sentences", use_docvars=FALSE)
+#         docnames(tmp) <- NULL
+#         assign(corpus2, tmp)
+#         rm(tmp)
+#         save(list=corpus2, file=corpusFile, compress = FALSE)
+#     } else load(corpusFile) #43s
+#     rm(list=corpus1)
+# }
+```
+
+<!-- Summary -->
+
+```{r}
+# summariesFile <- file.path(dataDir, "corpora2.summary.rda")
+# if(!file.exists(summariesFile)) {
+#     corpora2.summary <- summary.corpora(paste0(docs,".corpus2")) #74min
+#     save(corpora2.summary, file=summariesFile, compress=FALSE)
+# } else load(summariesFile)
+# corpora2.summary
+# colSums(corpora2.summary[,-1])
+```
+
+## Generating word tokens
+
+Generating word tokens (unigrams) with the following transformations:
+
+* Padding sentences with start and finish sentence delimiters `"#s#` and `#e#` (not present in training data)
+* Remove numbers
+* Remove punctuation
+* Remove symbols
+* Remove separators
+* Remove hyphens
+* Remove URLs
+* Remove unlikely words longer than 20 characters, based on [Wikipedia's citation](https://en.wikipedia.org/wiki/Longest_word_in_English#cite_note-14)
+* Lowercasing
+* Replacing rare tokens (frequency > 1) with an unknown word tag "#u#"
+
+```{r}
+for (doc in docs) { # 46min
+    #vvvvv
+    # corpus <- paste0(doc, ".corpus2")
+    corpus <- paste0(doc, ".corpus1")
+    #^^^^^
+    corpusFile <- file.path(dataDir, paste0(corpus, ".rda"))
+    tokens <- paste0(doc, ".tokens")
+    tokensFile <- file.path(dataDir, paste0(tokens, ".rda"))
+    if(!file.exists(tokensFile)) {
+        #vvvvv
+        # assign(tokens, tokens(get(corpus), remove_numbers=T, remove_punct=T, remove_symbols=T,
+        #                       remove_separators=T, remove_twitter=T, remove_hyphens=T, remove_url=T))
+        assign(tokens, tokens(get(corpus), what="sentence"))
+        assign(tokens, paste("#s#", get(tokens), "#e#"))
+        assign(tokens, tokens(get(tokens),
+                              remove_numbers=T,
+                              remove_punct=T,
+                              remove_symbols=T,
+                              remove_separators=T,
+                              remove_twitter=FALSE,
+                              remove_hyphens=T,
+                              remove_url=T))
+        #^^^^^
+        assign(tokens, tokens_remove(get(tokens), max_nchar = 20L))
+        assign(tokens, tokens_tolower(get(tokens), keep_acronyms = FALSE))
+        #vvvvv unknown words
+        freq1 <- as.data.table(textstat_frequency(dfm(get(tokens), tolower=FALSE, ngrams=1, concatenator=" "))[, 1:2])[frequency==1]
+        assign(tokens, tokens_replace(get(tokens), freq1$feature, replacement = rep("#u#", nrow(freq1)))) #reduces types in around 50%
+        rm(freq1)
+        #^^^^^
+        save(list=tokens, file=tokensFile, compress = FALSE)
+        #rm(list=tokens)
+    }
+    rm(list=corpus)
+}
+```
+
+Summary
+
+```{r}
+summariesFile <- file.path(dataDir, "tokens.summary.rda")
+if(!file.exists(summariesFile)) {  #6s
+    tokens.summary <- data.frame(t(sapply(docs, function(doc) {
+        tokens <- paste0(doc, ".tokens")
+        # tokensFile <- file.path(dataDir, paste0(tokens, ".rda"))
+        # load(tokensFile)
+        c(Tokens = sum(ntoken(get(tokens))),
+          Types = length(types(get(tokens))),
+          size.MB = round(object.size(get(tokens))/1024/1024))
+        })))
+    save(tokens.summary, file=summariesFile, compress=FALSE)
+} else load(summariesFile)
+tokens.summary
+colSums(tokens.summary[,c(1,3)])
+```
+
+## Generating document feature matrices
+
+```{r}
+t0<-proc.time()
+for (doc in docs) { #5h
+    tokens <- paste0(doc, ".tokens")
+    tokensFile <- file.path(dataDir, paste0(tokens, ".rda"))
+    for (ngram in 1:6) {
+        dfm <- paste0(doc, ".dfm.", ngram, "gram")
+        dfmFile <- file.path(dataDir, paste0(dfm, ".rda"))
+        if(!file.exists(dfmFile)) {
+            if(!exists(tokens)) load(tokensFile)
+            assign(dfm, dfm(get(tokens), tolower=FALSE, ngrams=ngram, concatenator=" "))
+            save(list=dfm, file=dfmFile, compress = FALSE)
+            rm(list=dfm)
+            gc()
+        }
+    }
+    if(exists(tokens)) {
+        rm(list=tokens)
+        gc()
+    }
+}
+proc.time()-t0
+```
+
+## Histograms of the top 20 *n*-gram features, *_n_* from 1 to 6
+
+```{r topfeatures, fig.height=4, fig.width=20}
+# generating a list of top 20 features
+top=20
+topfeatures.file <- file.path(dataDir, "topfeatures.bydoc.rda")
+if(!file.exists(topfeatures.file)) {
+    topfeatures.bydoc <-
+        lapply(1:6, function(ngram) { #19min
+            sapply(docs, function(doc) {
+                dfm <- paste0(doc, ".dfm.", ngram, "gram")
+                load(file.path(dataDir, paste0(dfm, ".rda")))
+                tf <- topfeatures(get(dfm), top)
+                rm(list=dfm)
+                tf
+            }, simplify = FALSE)
+        })
+    save(topfeatures.bydoc, file=topfeatures.file, compress=FALSE)
+} else load(topfeatures.file)
+# plotting the top 20 features
+for(ngram in seq_along(topfeatures.bydoc)) {
+    grobs <- lapply(seq_along(topfeatures.bydoc[[ngram]]), function(doc) {
+        frequency <- topfeatures.bydoc[[ngram]][[doc]]
+        df <- data.frame(frequency = frequency,
+                         feature = factor(names(frequency), levels = names(sort(frequency))))
+        ggplot(df, aes(feature, frequency)) + geom_col() + coord_flip() +
+                labs(title=docs[doc], x=paste0(ngram, "-gram"))
+    })
+    grid.arrange(grobs = grobs, ncol=length(docs),
+                 top=paste0(ngram,"-gram"," features"))
+}
+```
+
+## Findings
+
+There are hundred millions tokens from the given texts.
+
+There are more tokens in the blogs, followed by news and twitter.
+
+There are more unique words (types), which means a more diverse vocabulary in twitter, followed by blogs and news.  This is expected hence twitter is supposed to have a more informal language than blogs, while news is supposed to have the less informal language than the other two.
+
+The top 1-grams show the vocabularies are somewhat similar although one can see high frequencies of pronoun "you" in twitter messages and the pronoun "I" in both blogs and twitter which agree with the fact that blogs are meant to be a kind of biography written in first person, while twitter is meant to be both a kind of biography but also frequently replying to someone else's twitter, and finally, news are more likely to be written in third person.
+
+Comparing the top 2-grams with the top 3-grams and so on, one can see how the English language model start to build up and how some kind of jargons appear, e.g.:
+
+* Blogs and News: "at the end of"
+* Twitter: "thanks for the shout out"
+
+# Prediction algorithm proposal
+
+The proposal is to develop a prediction algorithm that does the following:
+
+* takes the last *n* words from a given text, limited to a maximum of 4 words, and look for the next word in a *n+1* n-gram table.
+
+* To improve the chances to find a next word, if the *n* words are not found in the *n+1* n-gram table, the algorithm shall successively fall back to look for the last *n-1* words in lower order *n*-gram tables.

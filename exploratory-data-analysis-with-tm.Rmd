@@ -1,0 +1,353 @@
+---
+title: "Data Science Specialization Capstone Project"
+author: "Maurício Collaça"
+date: "February 27, 2018"
+output: 
+  html_document: 
+    number_sections: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, comment = "")
+options(width = 130)
+before <- function(rungc=TRUE) {
+    if(rungc) gc()
+    t0 <<- proc.time()
+    ms0 <<- memory.size()
+    mm0 <<- memory.size(TRUE)
+    message(Sys.time(), ": previous ", ms0, " MB, ",
+            "max ", memory.size(TRUE), " MB")
+}
+after <- function(rungc=TRUE) {
+    t1 <- proc.time() - t0
+    if(rungc) gc()
+    message(Sys.time(), ": using ", memory.size(), " MB, ",
+            "delta " , round(memory.size() - ms0), " MB, ",
+            "max ", memory.size(TRUE), " MB, ",
+            "max delta ", round(memory.size(TRUE) - mm0), " MB, ",
+            "time ", round(t1)[3], " secs")
+}
+available <- function(name, path = "~/dsscapstone", verbose = FALSE) {
+    if(exists(name)) {
+        if(verbose) message(name, " already exists.")
+        return(TRUE)
+    }
+    file <- file.path(path, paste0(name, ".rda"))
+    if(file.exists(file)) {
+        if(verbose) message("loading cache file ", file)
+        load(file, .GlobalEnv)
+        return(TRUE)
+    }
+    return(FALSE)
+}
+cache <- function(name, path = "~/dsscapstone", verbose = FALSE) {
+    file <- file.path(path, paste0(name, ".rda"))
+    if(verbose) message("saving cache file ", file)
+    save(list = name, file = file, compress = FALSE)
+}
+```
+
+```{r include=FALSE}
+library(parallel); library(tm); library(stringr); library(gridExtra); library(ggplot2); library(dplyr); library(tidyr)
+```
+
+# Introduction
+
+# Getting Data
+
+Data source
+```{r}
+(fileURL <- "https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip")
+```
+
+Downloaded file
+```{r}
+dataDir <- "~/dsscapstone"
+zipFile <- "Coursera-SwiftKey.zip"
+zipfilePath <- file.path(dataDir, zipFile)
+if(!file.exists(zipfilePath)) {
+    download.file(fileURL, destfile=zipfilePath, cacheOK = FALSE)
+}
+file.info(zipfilePath)[c(1,5)]
+```
+
+Compressed contents
+```{r}
+(zipContents <- unzip(zipfilePath, list=TRUE))
+```
+
+Languages found
+```{r}
+langFilePattern <- "^final/(..)_../.._...+\\.txt$"
+unique(sub(langFilePattern, "\\1", grep(langFilePattern, zipContents$Name, value = TRUE)))
+```
+
+English files summary via [GNU coreutils wc](http://www.gnu.org/software/coreutils/wc)
+```{r, cache=TRUE}
+unzipFiles <- sort(grep("^.*en_US\\..*\\.txt$", zipContents$Name, value=T))
+files <- file.path(dataDir, basename(unzipFiles))
+if(!all(file.exists(files))) unzip(zipfilePath, files=unzipFiles, setTimes=T, exdir=dataDir, junkpath=T)
+wc <- function(paths) {
+    require(parallel)
+    cluster <- makeCluster(detectCores())
+    ret <- parSapplyLB(cluster, paths, function(x)
+        as.integer(unlist(strsplit(system(paste("wc -l -w -c -L", x), TRUE),"\\s+"))[2:5]))
+    stopCluster(cluster)
+    rownames(ret) <- c("lines", "words", "bytes", "longest.line")
+    data.frame(t(ret))
+}
+wc(files) #3s
+```
+
+Fixing Windows' End-of-File (EOF) character issue
+```{r}
+fix.files <- function(f, basenamer = function(x) basename(x)) {
+    con <- file(f, "rb")
+    buffer <- gsub("\032", " ", readLines(con, skipNul=TRUE))
+    close(con)
+    outFile <- file.path(dirname(f), basenamer(f))
+    con <- file(outFile, "wb")
+    writeLines(buffer, con)
+    close(con)
+    outFile
+}
+```
+
+```{r, cache=TRUE}
+myBasenamer <- function(x) gsub("en_US\\.|\\.txt", "", basename(x))
+fixedFiles <- file.path(dataDir, myBasenamer(unzipFiles))
+if(!all(file.exists(fixedFiles))) {
+    cluster <- makeCluster(detectCores())
+    before()
+    out <- parSapply(cluster, files, fix.files, myBasenamer) #35s while lapply=66s
+    after()
+    stopCluster(cluster)
+}
+wc(fixedFiles) #3s
+```
+
+```{r}
+# # Merging files
+# merge.file <- file.path(dataDir, "corpus.txt")
+# if(!file.exists(merge.file)) {
+#     merge.con <- file(merge.file, "wb")
+#     for(f in files) {
+#         f.con <- file(f, "rb")
+#         writeLines(gsub("\032", " ", readLines(f.con, skipNul=T)), merge.con) #gsub in windows
+#         close(f.con)       
+#     } #71s
+#     close(merge.con)
+# }
+# knitr::kable(wc(merge.file))
+```
+```{r}
+# # Splitting files
+# splitDir <- file.path(baseDir, "parts")
+# if(!dir.exists(splitDir)) {
+#     dir.create(splitDir)
+#     library(parallel)
+#     cluster <- makeCluster(detectCores())
+#     clusterExport(cluster, "splitDir")
+#     t0<-proc.time()
+#     parSapplyLB(cluster, unzipPaths, function(f) { # 1 core = 76, 3 cores = 35s
+#         print(f)
+#         ofi <- 0
+#         con <- file(f, "rb")#, encoding="UTF-8")
+#         maxlines <- 100000L
+#         repeat {
+#             # \032 removed avoids early EOF in DirSource() on Windows
+#             buffer <- gsub("\032"," ", readLines(con, n=maxlines))
+#             if(length(buffer) > 0) {
+#                 ofi <- ofi + 1
+#                 ofn <- file.path(splitDir, paste0(basename(f),".",sprintf("%03d", ofi))) #3 cores = 33s
+#                 writeLines(buffer, ofn)
+#             }
+#             if(length(buffer) < maxlines) {
+#                 break
+#             }
+#         }
+#         close(con)
+#         return(ofi)
+#     })
+#     print(proc.time()-t0)
+#     stopCluster(cluster)
+# }
+```
+
+# Text mining with tm package
+
+```{r, cache=TRUE}
+if(!available("corpus1")) {
+    cluster <- makeCluster(detectCores())
+    corpus1 <- parLapply(cluster, fixedFiles, function(f) { #parallel improved from 84s to 69s
+        require(tm)
+        VCorpus(DirSource(directory=dirname(f), encoding="UTF-8", pattern=paste0("^",basename(f),"$")),
+                readerControl = list(reader = readPlain, language = "en")) #69s
+    })
+    stopCluster(cluster)
+    corpus1 <- do.call("c", corpus1)
+    cache("corpus1")
+}
+```
+
+## Corpus summary statistics
+
+```{r}
+summary.corpus <- function(corpus, digits = 0) {
+    library(stringr)
+    ret <- lapply(corpus, function(doc) {
+        wordsPerLine <- str_extract_all(doc$content, boundary("word"))
+        list(ncharPerLine = nchar(doc$content),
+             nSentencesPerLine = str_count(doc$content, boundary("sentence")),
+             wordSizesPerLine = lapply(wordsPerLine, nchar))
+    })
+    ret <- sapply(ret, function(doc) {
+        library(tm)
+        nWordsPerLine <- sapply(doc$wordSizesPerLine, length)
+        c("Lines" = length(doc$ncharPerLine),
+          "  Line size median" = (median(doc$ncharPerLine)),
+          "  Line size average" = (mean(doc$ncharPerLine)),
+          "  Line size st. dev." = (sd(doc$ncharPerLine)),
+          "  Line size max" = max(doc$ncharPerLine),
+          "Sentences" = sum(doc$nSentencesPerLine),
+          "  Sentences per line median" = (median(doc$nSentencesPerLine)),
+          "  Sentences per line average" = (mean(doc$nSentencesPerLine)),
+          "  Sentences per line st. dev." = (sd(doc$nSentencesPerLine)),
+          "  Sentences per line max" = max(doc$nSentencesPerLine),
+          "Words" = sum(nWordsPerLine),
+          "  Words per line median" = (median(nWordsPerLine)),
+          "  Words per line average" = (mean(nWordsPerLine)),
+          "  Words per line st. dev." = (sd(nWordsPerLine)),
+          "  Words per line max" = max(nWordsPerLine),
+          "  Word size median" = (median(unlist(doc$wordSizesPerLine))),
+          "  Word size average" = (mean(unlist(doc$wordSizesPerLine))),
+          "  Word size st. dev." = (sd(unlist(doc$wordSizesPerLine))),
+          "  Word size max" = max(unlist(doc$wordSizesPerLine)),
+          "Bytes" = sum(doc$ncharPerLine))
+    })
+    print(ret, digits = digits)
+}
+```
+
+```{r, cache=TRUE}
+if(!available("summary.corpus1")) {
+    summary.corpus1 <- summary.corpus(corpus1) # 110s
+    cache("summary.corpus1")
+}
+summary.corpus1
+rm(summary.corpus1)
+```
+
+## Content transformations
+
+* Ensure all data are encoded in UTF-8
+* Remove invalid multibyte strings
+* Remove accents
+* Remove non-printable characters
+* Convert to lower case
+* Remove URLs, tiny URLs, Twitter tags, Twitter usernames and email address
+* Removing numbers
+* Removing punctuations excepet intra-word contractions
+* Removing words longer than 20 characters
+* Removing extra whitespaces
+
+```{r}
+requiredTransform <- function(x, blacklist=NULL) {
+    require(tm)
+    x <- iconv(enc2utf8(x), sub = " ")                              #Recommended by http://tm.r-forge.r-project.org/faq.html#Encoding
+    x <- iconv(x, 'UTF-8','ASCII//TRANSLIT', sub=" ")               #de-accenting and non-convertibles
+    x <- gsub("[^[:print:]]+", " ", x)                              #non-printable (e.g. \n, \r, etc)
+    x <- tolower(x)                                                 #requires non-printable chars or ASCII
+    x <- gsub("(s?)(f|ht)tp(s?)://\\S+\\b", "", x)                  #URLs
+    x <- gsub("[a-z]{1,5}[.][a-z]{2,3}/[a-z0-9]+\\b", "", x)        #tiny URLs
+    x <- gsub("\\brt ", "", x)                                      #twitter tags (incomplete)
+    x <- gsub("[@][a-z0-9_]{1,15}\\b", "", x)                       #twitter usernames
+    x <- gsub("\\S+[@]\\S+[.]\\S+\\b", "", x)                       #email address
+    if(!is.null(blacklist))                                         #remove words
+        x <- gsub(sprintf("(*UCP)\\b(%s)\\b", paste(sort(blacklist, decreasing=TRUE), collapse="|")), "", x, perl=TRUE)
+    #x <- removeNumbers(x)                                          #removeNumbers replaced...
+    x <- gsub("[[:digit:]]+", " ", x)                              #replace numbers by space avoids new words: "0n1e2w3 4w5o6r7d9s9"
+    #x <- removePunctuation(x, preserve_intra_word_contractions=T, preserve_intra_word_dashes = F)
+    x <- gsub("(\\w)'(\\w)", "\\1\001\\2", x)                       #replaces removePunctuation:
+    x <- gsub("[[:punct:]]+", " ", x)                               #1) preserving word contractions: e.g "I'm"
+    x <- gsub("\001", "'", x)                                       #2) replacing by space avoids new words: "-n-e-w- -w-o-r-d-s-"
+    # TODO: expand known intra-word contractions?
+    x <- gsub("\\b\\S+{21,}\\b", "", x)                             #words longer than 20
+    # TODO: replace single letters by " " but i,a
+    # TODO: replace letter repetitions
+    x <- gsub("[[:space:]]+", " ", x)                               #replace spaces, \t, \r, \n, etc by a single space
+    # x <- stemDocument(x, language = "english")                    #stemming
+    x
+}
+```
+
+```{r, cache=TRUE}
+if(!available("corpus2")) {
+    cluster <- makeCluster(detectCores())
+    clusterExport(cluster, "requiredTransform")
+    tm_parLapply_engine(cluster)
+    corpus2 <- tm_map(corpus1, content_transformer(requiredTransform)) #parallel 237s else 514s
+    tm_parLapply_engine(NULL)
+    stopCluster(cluster)
+    cache("corpus2")
+}
+rm(corpus1)
+```
+
+## Transformation summary statistics
+
+```{r, cache=TRUE}
+if(!available("summary.corpus2")) {
+    summary.corpus2 <- summary.corpus(corpus2) # 110s
+    cache("summary.corpus2")
+}
+summary.corpus2
+rm(summary.corpus2)
+```
+
+## n-Gram analysis
+
+```{r}
+tokenizers <- list(
+    unigram = function(x) {options(java.parameters="-Xmx7168m"); RWeka::NGramTokenizer(x, RWeka::Weka_control(min=1L, max=1L, delimiters=" "))},#15m37s
+    bigram = function(x) {options(java.parameters="-Xmx7168m"); RWeka::NGramTokenizer(x, RWeka::Weka_control(min=2L, max=2L, delimiters=" "))},#15m37s
+    trigram = function(x) {options(java.parameters="-Xmx7168m"); RWeka::NGramTokenizer(x, RWeka::Weka_control(min=3L, max=3L, delimiters=" "))},#43m23s
+    quadgram = function(x) {options(java.parameters="-Xmx6144m"); RWeka::NGramTokenizer(x, RWeka::Weka_control(min=4L, max=4L, delimiters=" "))}#1h19m
+)
+```
+
+```{r}
+plotTDM <- function(tdm, n, title) {
+    require(tm); require(ggplot2)
+    mfts <- findMostFreqTerms(tdm, n)
+    data <- bind_rows(
+        lapply(names(mfts), function(doc, mfts) {
+            data.frame(doc=doc, term=names(mfts[[doc]]), frequency=unname(mfts[[doc]]), stringsAsFactors = FALSE)
+        }, mfts)
+    )
+    g <- ggplot(data, aes(term, frequency)) +
+        geom_col(aes(fill=doc, group=doc), position = "dodge") +
+        labs(title = title) +
+        coord_flip()
+    plot(g)
+}
+```
+
+```{r, cache=TRUE}
+ngrams <- c("unigram", "bigram", "trigram", "quadgram")
+for(ngram in ngrams) {
+    message(ngram, " Term Document Matrix")
+    tdm <- paste0("tdm.", ngram)
+    if(!available(tdm)) {
+        # obj.size: 1-gram=45.8Mb, 2-gram=1.1Gb, 3-gram=3.8Gb, 4-gram=6.2GB
+        assign(tdm, TermDocumentMatrix(corpus2, control=list(tokenize=tokenizers[[ngram]],
+                                                             tolower=F, wordLengths=c(1,Inf))))
+        cache(tdm)
+    }
+    inspect(get(tdm))
+    n <- 10
+    title <- paste("Top", n, "most frequent", ngram, "per document")
+    plotTDM(get(tdm), n, title)
+    rm(list=tdm)
+}
+```

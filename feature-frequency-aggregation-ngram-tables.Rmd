@@ -1,0 +1,54 @@
+---
+title: "Feature frequency aggregation and n-gram table generation"
+author: "Maurício Collaça"
+date: "April 24, 2018"
+output: 
+  html_document: 
+    code_folding: hide
+    number_sections: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment = "")
+options(width = 120)
+```
+
+```{r message=FALSE}
+library(data.table); library(quanteda)
+```
+
+# Aggregating frequencies by feature
+
+```{r}
+dataDir <- "~/dsscapstone"
+docs <- c("blogs", "news", "twitter")
+for (n in 1:5) { # ~1h24m
+    ngram <- paste0("dt.", n, "gram")
+    ngram.file <- paste0(dataDir, "/", ngram, ".rda")
+    if(!file.exists(ngram.file)) {
+        # merge n-grams of same order
+        dt <- rbindlist(lapply(docs, function(doc) {
+            dfm <- paste0(doc, ".dfm.", n, "gram")
+            dfm.file <- paste0(dfm, ".rda")
+            load(file.path(dataDir, dfm.file))
+            dt <- as.data.table(textstat_frequency(get(dfm))[, 1:2])
+            dt[, frequency := as.integer(frequency)]
+            rm(list=dfm)
+            dt
+        }))
+        # group features, sum frequency
+        dt <- dt[, list(frequency=sum(frequency)), by=feature]
+        
+        # filter frequency > 1, group by x, take the highest frequency for n > 2
+        # dt <- dt[frequency > 1, .SD[1], by = x] #slower
+        # setorder(dt, x, -frequency)
+        # dt <- dt[dt[frequency > 1, .I[1], by = x]$V1, ] #faster
+        
+        assign(ngram, dt)
+        save(list=ngram, file=ngram.file, compress = FALSE)
+        rm(list=ngram)
+        rm(dt)
+        gc()
+    }
+}
+```

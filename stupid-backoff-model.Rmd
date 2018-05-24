@@ -1,0 +1,308 @@
+---
+title: "Stupid backoff prediction model"
+author: "Maurício Collaça"
+date: "April 24, 2018"
+output: 
+  html_document: 
+    code_folding: hide
+    number_sections: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment = "")
+options(width = 120)
+```
+
+```{r message=FALSE}
+library(data.table); library(quanteda)
+```
+
+```{r}
+dataDir <- "~/dsscapstone"
+```
+
+```{r}
+nchunks <- function(x, factor) {
+    objsize <- as.numeric(object.size(x))
+    gc()
+    available <- (memory.limit()-memory.size())*1024^2
+    available <- max(available, objsize*(1.01))
+    ceiling((factor*objsize)/(available-objsize))
+}
+chunks <- function(x, factor) {
+    objsize <- as.numeric(object.size(x))
+    gc()
+    available <- (memory.limit()-memory.size())*1024^2
+    available <- max(available, objsize*(1.01))
+    nchunks <- ceiling((factor*objsize)/(available-objsize))
+    rep(1:nchunks, each=ceiling(nrow(x)/nchunks), length.out=nrow(x))
+}
+```
+
+```{r}
+tf.file <- file.path(dataDir, "dt.tf5.rda")
+if (!file.exists(tf.file)) { #393s
+    t0<-proc.time()
+    load(file.path(dataDir, "dt.5gram.rda")) #6.1GB
+    dt.5gram <- dt.5gram[frequency>1]
+    setnames(dt.5gram, "feature", "x1")
+    
+    dt.5gram[, c("x1","x2","x3","x4","y") := tstrsplit(x1, " ", fixed=TRUE)]
+    dt.5gram[, c("x1","x2","x3","x4","y") := .(factor(x1), factor(x2), factor(x3), factor(x4), factor(y))]
+    
+    setcolorder(dt.5gram, c("x1", "x2", "x3", "x4", "y", "frequency"))
+    
+    setkey(dt.5gram, x1, x2, x3, x4)
+    dt.5gram <- dt.5gram[dt.5gram[, .I[frequency == max(frequency)], by=.(x1,x2,x3,x4)]$V1] #76.9MB
+    setkey(dt.5gram, x1, x2, x3, x4)
+    
+    dt.tf5 <- dt.5gram
+    save(dt.tf5, file=tf.file, compress=FALSE)
+    rm(dt.5gram)
+    gc()
+    proc.time()-t0
+} else load(tf.file)
+dt.tf5[.("me", "it", "was", "a")]
+```
+
+```{r}
+bo.file <- file.path(dataDir, "dt.bo4.rda")
+tf.file <- file.path(dataDir, "dt.tf4.rda")
+if (!file.exists(bo.file) | !file.exists(tf.file)) { #648s
+    t0<-proc.time()
+    load(file.path(dataDir, "dt.4gram.rda")) #5.3GB
+    setnames(dt.4gram, "feature", "x1")
+    
+    dt.4gram[, chunk:=chunks(dt.4gram, factor = 3)]
+    dt.4gram <- split(dt.4gram, by="chunk", keep.by=FALSE)
+    dt.4gram <- rbindlist(lapply(dt.4gram, function(DT) DT[, c("x1","x2","x3","y") := tstrsplit(x1, " ", fixed=TRUE)]))
+    
+    dt.4gram[, c("x1","x2","x3","y") := .(factor(x1), factor(x2), factor(x3), factor(y))]
+    
+    setcolorder(dt.4gram, c("x1", "x2", "x3", "y", "frequency"))
+    
+    dt.bo4 <- dt.4gram[dt.tf5, .(x1,x2,x3,y,frequency), on=c(x1="x1", x2="x2", x3="x3", y="x4")] #63.6MB
+    setkey(dt.bo4, x1, x2, x3)
+    save(dt.bo4, file=bo.file, compress=FALSE)
+    
+    setkey(dt.4gram, x1, x2, x3)
+    # dt.4gram <- dt.4gram[dt.4gram[frequency>1, .I[which.max(frequency)], by=.(x1,x2,x3)]$V1] #takes only one
+    dt.4gram <- dt.4gram[dt.4gram[frequency>1, .I[frequency == max(frequency)], by=.(x1,x2,x3)]$V1] #127.2MB
+    setkey(dt.4gram, x1, x2, x3)
+    
+    dt.tf4 <- dt.4gram
+    save(dt.tf4, file=tf.file, compress=FALSE)
+    rm(dt.4gram)
+    gc()
+    proc.time()-t0
+} else {
+    load(bo.file)
+    load(tf.file)
+}
+```
+
+```{r}
+bo.file <- file.path(dataDir, "dt.bo3.rda")
+tf.file <- file.path(dataDir, "dt.tf3.rda")
+if (!file.exists(bo.file) | !file.exists(tf.file)) { #294s
+    t0<-proc.time()
+    load(file.path(dataDir, "dt.3gram.rda")) #3.2GB
+    setnames(dt.3gram, "feature", "x1")
+    
+    dt.3gram[, chunk:=chunks(dt.3gram, factor = 3)]
+    dt.3gram <- split(dt.3gram, by="chunk", keep.by=FALSE)
+    dt.3gram <- rbindlist(lapply(dt.3gram, function(DT) DT[, c("x1","x2","y") := tstrsplit(x1, " ", fixed=TRUE)]))
+    
+    dt.3gram[, c("x1","x2","y") := .(factor(x1), factor(x2), factor(y))] #
+    
+    setcolorder(dt.3gram, c("x1", "x2", "y", "frequency"))
+    
+    dt.bo3 <- dt.3gram[dt.bo4, .(x1,x2,y,frequency), on=c(x1="x1", x2="x2", y="x3")] #50.1MB
+    setkey(dt.bo3, x1, x2)
+    save(dt.bo3, file=bo.file, compress=FALSE)
+    
+    setkey(dt.3gram, x1, x2)
+    dt.3gram <- dt.3gram[dt.3gram[, .I[frequency == max(frequency)], by=.(x1,x2)]$V1] #305.4MB
+    setkey(dt.3gram, x1, x2)
+    
+    dt.tf3 <- dt.3gram
+    save(dt.tf3, file=tf.file, compress=FALSE)
+    rm(dt.3gram)
+    gc()
+    proc.time()-t0
+} else {
+    load(bo.file)
+    load(tf.file)
+}
+```
+
+```{r}
+bo.file <- file.path(dataDir, "dt.bo2.rda")
+tf.file <- file.path(dataDir, "dt.tf2.rda")
+if (!file.exists(bo.file) | !file.exists(tf.file)) { #53s
+    t0<-proc.time()
+    load(file.path(dataDir, "dt.2gram.rda")) #851.8MB
+    setnames(dt.2gram, "feature", "x1")
+    
+    dt.2gram[, c("x1","y") := tstrsplit(x1, " ", fixed=TRUE)]
+    
+    dt.2gram[, c("x1","y") := .(factor(x1), factor(y))]
+    
+    setcolorder(dt.2gram, c("x1", "y", "frequency"))
+    
+    dt.bo2 <- dt.2gram[dt.bo3, .(x1,y,frequency), on=c(x1="x1", y="x2")] #36.8MB
+    setkey(dt.bo2, x1)
+    save(dt.bo2, file=bo.file, compress=FALSE)
+    
+    setkey(dt.2gram, x1)
+    dt.2gram <- dt.2gram[dt.2gram[, .I[frequency == max(frequency)], by=.(x1)]$V1] #38MB
+    setkey(dt.2gram, x1)
+    
+    dt.tf2 <- dt.2gram
+    save(dt.tf2, file=tf.file, compress=FALSE)
+    rm(dt.2gram)
+    gc()
+    proc.time()-t0
+} else {
+    load(bo.file)
+    load(tf.file)
+}
+```
+```{r}
+tf.file <- file.path(dataDir, "dt.tf1.rda")
+if (!file.exists(tf.file)) { #2s
+    t0<-proc.time()
+    load(file.path(dataDir, "dt.1gram.rda")) #16.9MB
+    setnames(dt.1gram, "feature", "x1")
+    setkey(dt.1gram, x1)
+    dt.tf1 <- dt.1gram
+    save(dt.tf1, file=tf.file, compress=FALSE)
+    rm(dt.1gram)
+    gc()
+    proc.time()-t0
+} else {
+    load(tf.file)
+}
+```
+
+```{r}
+305.4+127.2+76.9+63.6+50.1+38+36.8+16.9
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Prediction functions
+```{r}
+predict.nextword <- function(x, method="frequency", maxwords=4) {
+    require(data.table); require(quanteda)
+    sentences <- unlist(tokens(x, what="sentence"))
+    lastSentence <- sentences[length(sentences)]
+    xs <- tokens(lastSentence, remove_numbers=T, remove_punct=T, remove_symbols=T,
+                 remove_separators=T, remove_twitter=FALSE, remove_hyphens=T, remove_url=T)
+    xs <- tokens_remove(xs, max_nchar = 20L)
+    xs <- unlist(tokens_tolower(xs, keep_acronyms = FALSE))
+    xs <- xs[(max(length(xs), maxwords)-(maxwords-1)):length(xs)]
+    xs <- sapply(xs, function(x) ifelse(is.na(dt.mle1[x]$prob), "#u#", x))
+    while(length(xs) > 0) {
+        dt <- paste0("dt.mle", length(xs)+1)
+        names(xs) <- paste0("x",1:length(xs))
+        partialMatch <- data.table(t(xs))
+        beginningMatch <- data.table(t(c(x1="#s#",xs[-1])))
+        if(method=="frequency") {
+            partialAnswer <- get(dt)[partialMatch, on=paste0("x",1:length(xs))][order(-frequency, -prob)]
+            if(length(xs)>1)
+                beginningAnswer <- get(dt)[beginningMatch, on=paste0("x",1:length(xs))][order(-frequency, -prob)]
+        }
+        else if(method=="probability") {
+            partialAnswer <- get(dt)[partialMatch, on=paste0("x",1:length(xs))][order(-prob, -frequency)]
+            if(length(xs)>1)
+                beginningAnswer <- get(dt)[beginningMatch, on=paste0("x",1:length(xs))][order(-prob, -frequency)]
+        }
+        else stop("invalid method")
+        #if(length(y) != 0) return(y)
+        print(partialAnswer)
+        if(length(xs)>1)
+            print(beginningAnswer)
+        xs <- xs[-1]
+    }
+    invisible(character(0))
+}
+rank.answers <- function(x, answers, method="frequency", maxwords=4) {
+    require(data.table); require(quanteda)
+    sentences <- unlist(tokens(x, what="sentence"))
+    lastSentence <- sentences[length(sentences)]
+    xs <- tokens(lastSentence, remove_numbers=T, remove_punct=T, remove_symbols=T,
+                 remove_separators=T, remove_twitter=FALSE, remove_hyphens=T, remove_url=T)
+    xs <- tokens_remove(xs, max_nchar = 20L)
+    xs <- unlist(tokens_tolower(xs, keep_acronyms = FALSE))
+    xs <- xs[(max(length(xs), maxwords)-(maxwords-1)):length(xs)]
+    xs <- sapply(xs, function(x) ifelse(is.na(dt.mle1[x]$prob), "#u#", x))
+    for(n in 5:2) {
+        dt <- paste0("dt.mle", n)
+        names(xs) <- paste0("x",1:length(xs))
+        partialMatch <- data.table(t(xs))
+        partialAnswer <- get(dt)[partialMatch, on=paste0("x", 1:(n-1))][y %in% answers]
+        if(n>2) {
+            beginningMatch <- data.table(t(c(x1="#s#",xs[-1])))
+            beginningAnswer <- get(dt)[beginningMatch, on=paste0("x", 1:(n-1))][y %in% answers]
+        }
+        if(method=="frequency") {
+            partialAnswer <- partialAnswer[order(-frequency, -prob)]
+            if(n>2) beginningAnswer <- beginningAnswer[order(-frequency, -prob)]
+        } else if(method=="probability") {
+            partialAnswer <- partialAnswer[order(-prob, -frequency)]
+            if(n>2) beginningAnswer <- beginningAnswer[order(-prob, -frequency)]
+        } else stop("invalid method")
+        print(partialAnswer)
+        if(n>2) print(beginningAnswer)
+        xs <- xs[-1]
+    }
+}
+```
+
+

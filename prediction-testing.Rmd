@@ -1,0 +1,248 @@
+---
+title: "Prediction testing"
+author: "Maurício Collaça"
+date: "April 24, 2018"
+output: 
+  html_document: 
+    code_folding: hide
+    number_sections: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment = "")
+options(width = 120)
+```
+
+```{r message=FALSE}
+library(data.table); library(quanteda)
+```
+
+# Predicting quiz 2
+
+```{r}
+quiz2 <- c("The guy in front of me just bought a pound of bacon, a bouquet, and a case of",
+           "You're the reason why I smile everyday. Can you follow me please? It would mean the",
+           "Hey sunshine, can you follow me and make me the",
+           "Very early observations on the Bills game: Offense still struggling but the",
+           "Go on a romantic date at the",
+           "Well I'm pretty sure my granny has some old bagpipes in her garage I'll dust them off and be on my",
+           "Ohhhhh #PointBreak is on tomorrow. Love that film and haven't seen it in quite some",
+           "After the ice bucket challenge Louis will push his long wet hair out of his eyes with his little",
+           "Be grateful for the good times and keep the faith during the",
+           "If this isn't the cutest thing you've ever seen, then you must be")
+```
+
+## 1: The guy in front of me just bought a pound of bacon, a bouquet, and a case of *beer*
+```{r}
+rank.answers(quiz2[1], c("cheese", "soda", "beer", "pretzels"))
+```
+_Found @ 5gram if ordered by -(frequency*prob) or -frequency_
+```{r}
+predict.nextword(quiz2[1])
+```
+
+## 2: You're the reason why I smile everyday. Can you follow me please? It would mean the *world*
+```{r}
+rank.answers(quiz2[2], c("universe", "best", "most", "world"))
+```
+_Finds @ 5gram ordered by -prob, -frequency*prob or -frequency_
+```{r}
+predict.nextword(quiz2[2])
+```
+
+## 3: Hey sunshine, can you follow me and make me the *happiest*
+```{r}
+rank.answers(quiz2[3], c("saddest", "smellest", "happiest", "bluest"))
+```
+_Finds @ 5gram if ordered by -frequency*prob or -frequency_
+```{r}
+predict.nextword(quiz2[3])
+```
+
+## 4: Very early observations on the Bills game: Offense still struggling but the *defense*
+```{r}
+rank.answers(quiz2[4], c("players", "defense", "referees", "crowd"))
+```
+_Finds @ 4gram in the beginning of the sentence but cannot order to match the first_
+```{r}
+predict.nextword(quiz2[4])
+```
+
+## 5: Go on a romantic date at the *beach*
+```{r}
+rank.answers(quiz2[5], c("grocery", "movies", "mall", "beach"))
+```
+_Finds @ 4gram but cannot order to match the first_
+```{r}
+predict.nextword(quiz2[5])
+```
+
+## 6: Well I'm pretty sure my granny has some old bagpipes in her garage I'll dust them off and be on my *way*
+```{r}
+rank.answers(quiz2[6], c("phone", "horse", "motorcycle", "way"))
+```
+_Finds @ 5gram but cannot order to match the first_
+_Finds @ 4gram if ordered by -frequency and not by -(frequency*order)_
+```{r}
+predict.nextword(quiz2[6])
+```
+
+## 7: Ohhhhh #PointBreak is on tomorrow. Love that film and haven't seen it in quite some *time*
+```{r}
+rank.answers(quiz2[7], c("time", "thing", "weeks", "years"))
+```
+_Finds @ 5gram as a unique response no matter the order_
+```{r}
+predict.nextword(quiz2[7])
+```
+
+## 8: After the ice bucket challenge Louis will push his long wet hair out of his eyes with his little *fingers*
+```{r}
+rank.answers(quiz2[8], c("toes", "eyes", "fingers", "ears"))
+```
+_Finds other answers @ 5gram beginning of sentence and 4 gram_
+_Finds @ 3gram but cannot order to match the first_
+```{r}
+predict.nextword(quiz2[8])
+```
+
+## 9: Be grateful for the good times and keep the faith during the *bad*
+```{r}
+rank.answers(quiz2[9], c("sad", "hard", "bad", "worse"))
+```
+_Finds other answer at @ 4gram_
+_Finds @ 4gram beginning of the sentence but cannot order to match the first_
+```{r}
+predict.nextword(quiz2[9])
+```
+
+## 10: If this isn't the cutest thing you've ever seen, then you must be *insane*
+```{r}
+rank.answers(quiz2[10], c("insane", "asleep", "callous", "insensitive"))
+```
+_Finds other answer @ 5gram and 4 gram_
+_Finds @ 4gram beginning of the sentence but cannot order to match the first_
+```{r}
+predict.nextword(quiz2[10])
+```
+
+# Prediciting quiz 3
+
+```{r}
+quiz3 <- c("When you breathe, I want to be the air for you. I'll be there for you, I'd live and I'd",
+           "Guy at my table's wife got up to go to the bathroom and I asked about dessert and he started telling me about his",
+           "I'd give anything to see arctic monkeys this",
+           "Talking to your mom has the same effect as a hug and helps reduce your",
+           "When you were in Holland you were like 1 inch away from me but you hadn't time to take a",
+           "I'd just like all of these questions answered, a presentation of evidence, and a jury to settle the",
+           "I can't deal with unsymetrical things. I can't even hold an uneven number of bags of groceries in each",
+           "Every inch of you is perfect from the bottom to the",
+           "I’m thankful my childhood was filled with imagination and bruises from playing",
+           "I like how the same people are in almost all of Adam Sandler's")
+```
+
+
+## 1: When you breathe, I want to be the air for you. I'll be there for you, I'd live and I'd *die*
+```{r}
+rank.answers(quiz3[1], c("give", "die", "sleep", "eat"))
+```
+```{r}
+predict.nextword(quiz3[1])
+```
+
+## 2) Guy at my table's wife got up to go to the bathroom and I asked about dessert and he started telling me about his *spiritual*
+```{r}
+rank.answers(quiz3[2], c("horticultural", "financial", "marital", "spiritual"))
+```
+```{r}
+predict.nextword(quiz3[2])
+```
+
+## 3) I'd give anything to see arctic monkeys this *weekend*
+```{r}
+rank.answers(quiz3[3], c("month", "decade", "morning", "weekend"))
+```
+```{r}
+predict.nextword(quiz3[3])
+```
+
+## 4) Talking to your mom has the same effect as a hug and helps reduce your *stress*
+```{r}
+rank.answers(quiz3[4], c("hunger", "sleepiness", "happiness", "stress"))
+```
+```{r}
+predict.nextword(quiz3[4])
+```
+
+## 5) When you were in Holland you were like 1 inch away from me but you hadn't time to take a *picture*
+```{r}
+rank.answers(quiz3[5], c("look", "minute", "picture", "walk"))
+```
+```{r}
+predict.nextword(quiz3[5])
+```
+
+## 6) I'd just like all of these questions answered, a presentation of evidence, and a jury to settle the *matter*
+```{r}
+rank.answers(quiz3[6], c("matter", "case", "incident", "account"))
+```
+```{r}
+predict.nextword(quiz3[6])
+```
+
+## 7) I can't deal with unsymetrical things. I can't even hold an uneven number of bags of groceries in each *hand*
+```{r}
+rank.answers(quiz3[7], c("finger", "hand", "toe", "arm"))
+```
+```{r}
+predict.nextword(quiz3[7])
+```
+
+## 8) Every inch of you is perfect from the bottom to the *top*
+```{r}
+rank.answers(quiz3[8], c("side", "center", "top", "middle"))
+```
+```{r}
+predict.nextword(quiz3[8])
+```
+
+## 9) I’m thankful my childhood was filled with imagination and bruises from playing *outside*
+```{r}
+rank.answers(quiz3[9], c("inside", "weekly", "daily", "outside"))
+```
+```{r}
+predict.nextword(quiz3[9])
+```
+
+## 10) I like how the same people are in almost all of Adam Sandler's *movies*
+```{r}
+rank.answers(quiz3[10], c("stories", "pictures", "movies", "novels"))
+```
+```{r}
+predict.nextword(quiz3[10])
+```
+
+
+# Predicting n words from a first one
+```{r}
+predict.nwords <- function(x, n) {
+    for(tries in 1:n) {
+        x <- paste(x, predict.nextword(x))
+    }
+    x   
+}
+predict.nwords("I",20)
+```
+
+# Predicting n random words
+```{r}
+predict.randomWords <- function(n) {
+    predict.nwords(dt1[sample(1:nrow(dt1),1), x1],n-1)
+}
+predict.randomWords(20)
+```
+
+```{r}
+predict.nextword("and")
+```
+

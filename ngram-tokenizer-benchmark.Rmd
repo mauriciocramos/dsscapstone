@@ -1,0 +1,159 @@
+---
+title: "n-Gram tokenizer benchmark"
+author: "Maurício Collaça"
+date: "April 6, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tm)
+```
+
+# n-gram tokenizer list
+```{r}
+tokenizers <- list(
+# tokenizers = list(
+#     unigram = function(x) unlist(tokenizers::tokenize_ngrams(NLP::content(x), lowercase=F, n=1L, n_min=1L, stopwords=character(), ngram_delim=" ", simplify=T), F, F),
+#     bigram = function(x) unlist(tokenizers::tokenize_ngrams(NLP::content(x), lowercase=F, n=2L, n_min=2L, stopwords=character(), ngram_delim=" ", simplify=T), F, F),
+#     trigram = function(x) unlist(tokenizers::tokenize_ngrams(NLP::content(x), lowercase=F, n=3L, n_min=3L, stopwords=character(), ngram_delim=" ", simplify=T), F, F),
+#     quadgram = function(x) unlist(tokenizers::tokenize_ngrams(NLP::content(x), lowercase=F, n=4L, n_min=4L, stopwords=character(), ngram_delim=" ", simplify=T), F, F),
+#     pentagram = function(x) unlist(tokenizers::tokenize_ngrams(NLP::content(x), lowercase=F, n=5L, n_min=5L, stopwords=character(), ngram_delim=" ", simplify=T), F, F),
+#     hexagram = function(x) unlist(tokenizers::tokenize_ngrams(NLP::content(x), lowercase=F, n=6L, n_min=6L, stopwords=character(), ngram_delim=" ", simplify=T), F, F)),
+# quanteda = list(
+#     unigram = function(x) unlist(quanteda::tokens(unlist(NLP::content(x), F, F), what="fastestword", remove_separators=F, ngrams=1L, concatenator=" "), F, F),
+#     bigram = function(x) unlist(quanteda::tokens(unlist(NLP::content(x), F, F), what="fastestword", remove_separators=F, ngrams=2L, concatenator=" "), F, F),
+#     trigram = function(x) unlist(quanteda::tokens(unlist(NLP::content(x), F, F), what="fastestword", remove_separators=F, ngrams=3L, concatenator=" "), F, F),
+#     quadgram = function(x) unlist(quanteda::tokens(unlist(NLP::content(x), F, F), what="fastestword", remove_separators=F, ngrams=4L, concatenator=" "), F, F),
+#     pentagram = function(x) unlist(quanteda::tokens(unlist(NLP::content(x), F, F), what="fastestword", remove_separators=F, ngrams=5L, concatenator=" "), F, F),
+#     hexagram = function(x) unlist(quanteda::tokens(unlist(NLP::content(x), F, F), what="fastestword", remove_separators=F, ngrams=6L, concatenator=" "), F, F)),
+RWeka = list(
+    unigram = function(x) {options(java.parameters="-Xmx7168m"); RWeka::NGramTokenizer(x, RWeka::Weka_control(min=1L, max=1L, delimiters=" "))},#15m37s
+    bigram = function(x) {options(java.parameters="-Xmx7168m"); RWeka::NGramTokenizer(x, RWeka::Weka_control(min=2L, max=2L, delimiters=" "))},#15m37s
+    trigram = function(x) {options(java.parameters="-Xmx7168m"); RWeka::NGramTokenizer(x, RWeka::Weka_control(min=3L, max=3L, delimiters=" "))},#43m23s
+    quadgram = function(x) {options(java.parameters="-Xmx6144m"); RWeka::NGramTokenizer(x, RWeka::Weka_control(min=4L, max=4L, delimiters=" "))},#1h19m
+    pentagram = function(x) {options(java.parameters="-Xmx7168m"); RWeka::NGramTokenizer(x, RWeka::Weka_control(min=5L, max=5L, delimiters=" "))},
+        # noparallel, 2h:14! Xmx7168m OoME:GCOLE@ 
+        # parallel(1), Interruped@8h Xmx7168m
+    hexagram = function(x) {options(java.parameters="-Xmx7168m"); RWeka::NGramTokenizer(x, RWeka::Weka_control(min=6L, max=6L, delimiters=" "))}) #?
+# qdap = list(# NOTE: qdap::ngrams sorts the output.
+#     unigram = function(x) unlist(lapply(qdap::ngrams(NLP::content(x), n=1)$all_n$n_1, paste, collapse=" "), F, F),
+#     #Error in args[[i]] : attempt to select less than one element in integerOneIndex
+#     bigram = function(x) unlist(lapply(qdap::ngrams(NLP::content(x), n=2)$all_n$n_2, paste, collapse=" "), F, F),
+#     trigram = function(x) unlist(lapply(qdap::ngrams(NLP::content(x), n=3)$all_n$n_3, paste, collapse=" "), F, F),
+#     quadgram = function(x) unlist(lapply(qdap::ngrams(NLP::content(x), n=4)$all_n$n_4, paste, collapse=" "), F, F),
+#     pentagram = function(x) unlist(lapply(qdap::ngrams(NLP::content(x), n=5)$all_n$n_5, paste, collapse=" "), F, F),
+#     hexagram = function(x) unlist(lapply(qdap::ngrams(NLP::content(x), n=6)$all_n$n_6, paste, collapse=" "), F, F)),
+# ngram = list(
+#     unigram = function(x) unlist(lapply(NLP::content(x), ngram::ngram_asweka, min=1L, max=1L), F, F), # Error in FUN(X[[i]], ...) : out of memory
+#     bigram = function(x) unlist(lapply(NLP::content(x), ngram::ngram_asweka, min=2L, max=2L), F, F),
+#     trigram = function(x) unlist(lapply(NLP::content(x), ngram::ngram_asweka, min=3L, max=3L), F, F),
+#     quadgram = function(x) unlist(lapply(NLP::content(x), ngram::ngram_asweka, min=4L, max=4L), F, F),
+#     pentagram = function(x) unlist(lapply(NLP::content(x), ngram::ngram_asweka, min=5L, max=5L), F, F),
+#     hexagram = function(x) unlist(lapply(NLP::content(x), ngram::ngram_asweka, min=6L, max=6L), F, F)),
+# NLP = list(
+#     unigram = function(x) unlist(lapply(unlist(lapply(lapply(NLP::content(x), NLP::words), NLP::ngrams, n=1L), F, F), paste, collapse=" "), F, F), # 15min Peak 4.5GB
+#     bigram = function(x) unlist(lapply(unlist(lapply(lapply(NLP::content(x), NLP::words), NLP::ngrams, n=2L), F, F), paste, collapse=" "), F, F),
+#     trigram = function(x) unlist(lapply(unlist(lapply(lapply(NLP::content(x), NLP::words), NLP::ngrams, n=3L), F, F), paste, collapse=" "), F, F),
+#     quadgram = function(x) unlist(lapply(unlist(lapply(lapply(NLP::content(x), NLP::words), NLP::ngrams, n=4L), F, F), paste, collapse=" "), F, F),
+#     pentagram = function(x) unlist(lapply(unlist(lapply(lapply(NLP::content(x), NLP::words), NLP::ngrams, n=5L), F, F), paste, collapse=" "), F, F),
+#     hexagram = function(x) unlist(lapply(unlist(lapply(lapply(NLP::content(x), NLP::words), NLP::ngrams, n=6L), F, F), paste, collapse=" "), F, F))
+)
+```
+
+# Small scale test
+```{r}
+# ovid <- VCorpus(DirSource(system.file("texts", "txt", package = "tm"), encoding = "UTF-8"),
+#                 readerControl = list(language = "en"))
+# ngrams <- c("quadgram")
+# for(ngram in ngrams) {
+#     for(tokenizer in names(tokenizers)) {
+#         message(paste0("tdm.", ngram, ".", tokenizer))
+#         inspect(TermDocumentMatrix(ovid, control=list(tokenize=tokenizers[[tokenizer]][[ngram]], tolower=FALSE)))
+#     }
+# }
+# rm(ovid)
+```
+
+# Large scale test
+```{r}
+ngrams <- "quadgram" #c("unigram", "bigram", "trigram", "quadgram", "pentagram", "hexagram")
+if(!file.exists("benchmark.rda")) {
+    benchmark <- expand.grid(ngram = ngrams, tokenizer = names(tokenizers), 
+                             start = as.POSIXct(NA), finish = as.POSIXct(NA), elapsed = NA,
+                             MB.before = NA, MB.after = NA, MB.delta = NA,
+                             MB.max.before = NA, MB.max.after = NA, MB.max.delta = NA,
+                             obj.size.KB = NA, KEEP.OUT.ATTRS = FALSE, stringsAsFactors = FALSE)
+    benchmark <- benchmark[order(benchmark$ngram), ] 
+    row.names(benchmark) <- NULL
+    save(list="benchmark", file="benchmark.rda")
+} else {
+    load("benchmark.rda")
+}
+start.benchmark <- function() {
+    pos <- benchmark$tokenizer==tokenizer & benchmark$ngram==ngram
+    benchmark$start[pos] <- Sys.time()
+    benchmark$MB.before[pos] <- memory.size()
+    benchmark$MB.max.before[pos] <- memory.size(max = TRUE)
+    save(list="benchmark", file="benchmark.rda")
+    benchmark
+}
+stop.benchmark <- function() {
+    pos <- benchmark$tokenizer==tokenizer & benchmark$ngram==ngram
+    benchmark$finish[pos] <- Sys.time()
+    benchmark$elapsed[pos] <- round((as.numeric(benchmark$finish[pos]) - as.numeric(benchmark$start[pos]))/60)
+    benchmark$MB.after[pos] <- memory.size()
+    benchmark$MB.delta[pos] <-  benchmark$MB.after[pos] -  benchmark$MB.before[pos]
+    benchmark$MB.max.after[pos] <- memory.size(max = TRUE)
+    benchmark$MB.max.delta[pos] <-  benchmark$MB.max.after[pos] -  benchmark$MB.max.before[pos]
+    benchmark$obj.size.KB[pos] <- round(as.numeric(object.size(get(cacheName)))/1024, 2)
+    save(list="benchmark", file="benchmark.rda")
+    benchmark
+}
+```
+
+```{r, cache=TRUE}
+dataDir <- "~/dsscapstone"
+load(file.path(dataDir, "corpus2.rda"))
+for(ngram in ngrams) {
+    for(tokenizer in names(tokenizers)) {
+        cacheName <- paste0("tdm.", ngram, ".", tokenizer) #e.g unigram.NLP
+        cacheFile <- file.path(dataDir, paste0(cacheName, ".rda"))
+        if(!exists(cacheName)) {
+            if(file.exists(cacheFile)) {
+                message("Loading ", cacheFile)
+                load(cacheFile)
+            } else {
+                message("\nCreating a new ", cacheName)
+                benchmark <- start.benchmark()
+                # Isolate in a single worker isolates some leaks (e.g. rJava's)
+                # but make things slower and increase Rsession+Rscript memory usage 
+                # cluster <- makeCluster(1)
+                # tm_parLapply_engine(cluster)
+                assign(cacheName, 
+                       TermDocumentMatrix(corpus2,
+                                          control=list(tokenize=tokenizers[[tokenizer]][[ngram]],
+                                                       tolower=FALSE,
+                                                       wordLengths=c(1,Inf))))
+                # tm_parLapply_engine(NULL)
+                # stopCluster(cluster)
+                benchmark <- stop.benchmark()
+                message("\nSaving ", cacheName, " in ", cacheFile)
+                save(list = cacheName, file = cacheFile, compress = FALSE)
+                
+                # session clean-up: gc() ; rstudioapi::restartSession() ; gc() ; library(tm)
+                # These didn't work for cleaning the session:
+                    # detach("package:RWeka", unload = TRUE)
+                    # rJava::.jinit(parameters = "-Xmx512m", force.init = TRUE)
+                    # gc() ; rJava::.jcall("java/lang/System", method = "gc")
+            }
+        }
+        message("\nInspecting ", cacheName, "...")
+        inspect(get(cacheName))
+        rm(list=cacheName)
+    }    
+}
+```

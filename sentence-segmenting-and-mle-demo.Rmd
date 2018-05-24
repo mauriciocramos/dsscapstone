@@ -1,0 +1,91 @@
+---
+title: "Sentence segmenting and the maximum likelihood estimator"
+author: "Maurício Collaça"
+date: "May 7, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(quanteda); library(data.table)
+```
+
+```{r}
+corp <- corpus(c("1 I am Sam. 2 Sam I am",
+                 "I do not like green eggs and ham"))
+sentenceTokens <- tokens(corp, what="sentence")
+taggedSentences <- paste("#s#", sentenceTokens, "#e#")
+```
+
+```{r}
+unigram <- tokens(taggedSentences, what="word", ngrams=1, concatenator=" ", remove_numbers=T, remove_punct=T, remove_symbols=T, remove_separators=T, remove_twitter=FALSE, remove_hyphens=T, remove_url=T, verbose=F)
+dt1 <- as.data.table(textstat_frequency(dfm(unigram)))[,-(3:5)]
+setnames(dt1, "feature", "x1")
+dt1
+```
+```{r}
+bigram <- tokens_ngrams(unigram, n=2, concatenator=" ")
+dt2 <- as.data.table(textstat_frequency(dfm(bigram)))[,-(3:5)]
+setnames(dt2, "feature", "x1")
+dt2[, c("x1", "y") := tstrsplit(x1, " ", fixed=TRUE)]
+setcolorder(dt2, c("x1", "y", "frequency"))
+dt2[, prob := frequency / dt1[.SD, frequency, on="x1"]]
+dt2[order(-prob)]
+```
+
+```{r}
+trigram <- tokens_ngrams(unigram, n=3, concatenator=" ")
+dt3 <- as.data.table(textstat_frequency(dfm(trigram)))[,-(3:5)]
+setnames(dt3, "feature", "x1")
+dt3[, c("x1", "x2", "y") := tstrsplit(x1, " ", fixed=TRUE)]
+setcolorder(dt3, c("x1", "x2", "y", "frequency"))
+dt3[, prob := 
+        dt2[.SD, prob, on=c(x1="x1",y="x2")] *
+        dt2[.SD, prob, on=c(x1="x2",y="y")]]
+dt3[order(-prob)]
+```
+
+```{r}
+quadgram <- tokens_ngrams(unigram, n=4, concatenator=" ")
+dt4 <- as.data.table(textstat_frequency(dfm(quadgram)))[,-(3:5)]
+setnames(dt4, "feature", "x1")
+dt4[, c("x1", "x2", "x3", "y") := tstrsplit(x1, " ", fixed=TRUE)]
+setcolorder(dt4, c("x1", "x2", "x3", "y", "frequency"))
+dt4[, prob := 
+        dt2[.SD, prob, on=c(x1="x1",y="x2")] *
+        dt2[.SD, prob, on=c(x1="x2",y="x3")] *
+        dt2[.SD, prob, on=c(x1="x3",y="y")]]
+dt4[order(-prob)]
+```
+
+```{r}
+pentagram <- tokens_ngrams(unigram, n=5, concatenator=" ")
+dt5 <- as.data.table(textstat_frequency(dfm(pentagram)))[,-(3:5)]
+setnames(dt5, "feature", "x1")
+dt5[, c("x1", "x2", "x3", "x4", "y") := tstrsplit(x1, " ", fixed=TRUE)]
+setcolorder(dt5, c("x1", "x2", "x3", "x4", "y", "frequency"))
+dt5[, prob := 
+        dt2[.SD, prob, on=c(x1="x1",y="x2")] *
+        dt2[.SD, prob, on=c(x1="x2",y="x3")] *
+        dt2[.SD, prob, on=c(x1="x3",y="x4")] *
+        dt2[.SD, prob, on=c(x1="x4",y="y")]]
+dt5[order(-prob)]
+```
+
+```{r}
+hexagram <- tokens_ngrams(unigram, n=6, concatenator=" ")
+dt6 <- as.data.table(textstat_frequency(dfm(hexagram)))[,-(3:5)]
+setnames(dt6, "feature", "x1")
+dt6[, c("x1", "x2", "x3", "x4", "x5", "y") := tstrsplit(x1, " ", fixed=TRUE)]
+setcolorder(dt6, c("x1", "x2", "x3", "x4", "x5", "y", "frequency"))
+dt6[, prob := 
+        dt2[.SD, prob, on=c(x1="x1",y="x2")] *
+        dt2[.SD, prob, on=c(x1="x2",y="x3")] *
+        dt2[.SD, prob, on=c(x1="x3",y="x4")] *
+        dt2[.SD, prob, on=c(x1="x4",y="x5")] *
+        dt2[.SD, prob, on=c(x1="x5",y="y")]]
+dt6[order(-prob)]
+```

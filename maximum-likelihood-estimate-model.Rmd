@@ -1,0 +1,466 @@
+---
+title: "Maximum likelihood estimate prediction model"
+author: "Maurício Collaça"
+date: "April 24, 2018"
+output: 
+  html_document: 
+    code_folding: hide
+    number_sections: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment = "")
+options(width = 120)
+```
+
+```{r message=FALSE}
+library(data.table); library(quanteda)
+```
+
+# Maximum likelihood estimates (MLE)
+
+```{r}
+dataDir <- "~/dsscapstone"
+mle.file <- file.path(dataDir, "dt.mle1.rda")
+if (!file.exists(mle.file)) { #~0s
+    load(file.path(dataDir, "dt.1gram.rda"))
+    setnames(dt.1gram, "feature", "x1")
+    #276,192 observations
+    dt.1gram[, prob:=frequency/sum(frequency)]
+    setkey(dt.1gram, x1)
+    dt.mle1 <- dt.1gram
+    save(dt.mle1, file=mle.file, compress=FALSE)
+    rm(dt.1gram)
+    rm(dt.mle1)
+    gc()
+}
+mle.file <- file.path(dataDir, "dt.mle2.rda")
+if (!file.exists(mle.file)) { #~1min
+    load(file.path(dataDir, "dt.2gram.rda"))
+    setnames(dt.2gram, "feature", "x1")
+    dt.2gram[, c("x1", "y") := tstrsplit(x1, " ", fixed=TRUE)]
+    setcolorder(dt.2gram, c("x1", "y", "frequency"))
+    load(file.path(dataDir, "dt.mle1.rda"))
+    #12,560,713 obs left join 276,192 obs
+    dt.2gram[, prob := frequency / dt.mle1[.SD, frequency, on="x1"]]
+    rm(dt.mle1)
+    setkey(dt.2gram, x1, y)
+    dt.mle2 <- dt.2gram
+    save(dt.mle2, file=mle.file, compress=FALSE)
+    rm(dt.2gram)
+    rm(dt.mle2)
+    gc()
+}
+mle.file <- file.path(dataDir, "dt.mle3.rda")
+if (!file.exists(mle.file)) { #~8min
+    load(file.path(dataDir, "dt.3gram.rda"))
+    setnames(dt.3gram, "feature", "x1")
+    dt.3gram[, c("x1", "x2", "y") := tstrsplit(x1, " ", fixed=TRUE)]
+    setcolorder(dt.3gram, c("x1","x2", "y", "frequency"))
+    load(file.path(dataDir, "dt.mle2.rda"))
+    #43,497,624 obs left join 12,560,713 obs twice
+    dt.3gram[, prob := exp(log(dt.mle2[.SD, prob, on=c(x1="x1", y="x2")])
+                           + log(dt.mle2[.SD, prob, on=c(x1="x2", y="y")]))]
+    rm(dt.mle2)
+    setkey(dt.3gram, x1, x2)
+    dt.mle3 <- dt.3gram
+    save(dt.mle3, file=mle.file, compress=FALSE)
+    rm(dt.3gram)
+    rm(dt.mle3)
+    gc()
+}
+mle.file <- file.path(dataDir, "dt.mle4.rda")
+if (!file.exists(mle.file)) { #12min
+    load(file.path(dataDir, "dt.4gram.rda"))
+    setnames(dt.4gram, "feature", "x1")
+    # split data.table
+    chunks <- 2
+    dt.4gram[, chunk:=rep(1:chunks, each=ceiling(nrow(dt.4gram)/chunks), length.out=nrow(dt.4gram))]
+    dt.4gram <- split(dt.4gram, by="chunk", keep.by=FALSE)
+    # lapply tstrsplit
+    load(file.path(dataDir, "dt.mle2.rda"))
+    # 68,006,064 obs left join 12,560,713 obs three times
+    dt.4gram <- rbindlist(lapply(dt.4gram, function(DT) {
+        DT[, c("x1", "x2", "x3", "y") := tstrsplit(x1, " ", fixed=TRUE)]
+        DT[, prob := exp(log(dt.mle2[.SD, prob, on=c(x1="x1", y="x2")])
+                         + log(dt.mle2[.SD, prob, on=c(x1="x2", y="x3")])
+                         + log(dt.mle2[.SD, prob, on=c(x1="x3", y="y")]))]
+    }))
+    rm(dt.mle2)
+    setcolorder(dt.4gram, c("x1", "x2", "x3", "y", "frequency", "prob"))
+    setkey(dt.4gram, x1, x2, x3)
+    dt.mle4 <- dt.4gram
+    save(dt.mle4, file=mle.file, compress=FALSE)
+    rm(dt.4gram)
+    rm(dt.mle4)
+    gc()
+}
+mle.file <- file.path(dataDir, "dt.mle5.rda")
+if (!file.exists(mle.file)) { #~15min
+    load(file.path(dataDir, "dt.5gram.rda"))
+    setnames(dt.5gram, "feature", "x1")
+    # split data.table
+    chunks <- 4
+    dt.5gram[, chunk:=rep(1:chunks, each=ceiling(nrow(dt.5gram)/chunks), length.out=nrow(dt.5gram))]
+    dt.5gram <- split(dt.5gram, by="chunk", keep.by=FALSE)
+    # lapply tstrsplit
+    load(file.path(dataDir, "dt.mle2.rda"))
+    # 75,808,578 obs left join 12,560,713 obs four times
+    dt.5gram <- rbindlist(lapply(dt.5gram, function(DT) {
+        DT[, c("x1", "x2", "x3", "x4", "y") := tstrsplit(x1, " ", fixed=TRUE)]
+        DT[, prob := exp(log(dt.mle2[.SD, prob, on=c(x1="x1", y="x2")])
+                         + log(dt.mle2[.SD, prob, on=c(x1="x2", y="x3")])
+                         + log(dt.mle2[.SD, prob, on=c(x1="x3", y="x4")])
+                         + log(dt.mle2[.SD, prob, on=c(x1="x4", y="y")]))]
+    }))
+    rm(dt.mle2)
+    setcolorder(dt.5gram, c("x1", "x2", "x3", "x4", "y", "frequency", "prob"))
+    setkey(dt.5gram, x1, x2, x3, x4)
+    dt.mle5 <- dt.5gram
+    save(dt.mle5, file=mle.file, compress=FALSE)
+    rm(dt.5gram)
+    rm(dt.mle5)
+    gc()
+}
+```
+
+# Evaluating MLE
+
+Loading
+```{r}
+# 513s
+load("~/dsscapstone/dt.mle1.rda")
+load("~/dsscapstone/dt.mle2.rda")
+load("~/dsscapstone/dt.mle3.rda")
+load("~/dsscapstone/dt.mle4.rda")
+load("~/dsscapstone/dt.mle5.rda")
+gc()
+# dt2 <- dt.mle2[dt.2gram[, .I[1], by = x1]$V1, ]
+```
+
+*The sum of 1-gram probabilities is 1*
+```{r}
+dt.mle1[, sum(prob)]
+```
+*The number of unique first words in the 2-gram table is equal to the number of words in a 1-gram table minus 1*
+```{r}
+length(unique(dt.mle2$x1))
+nrow(dt.mle1)
+```
+*The sums of 2-gram probabilities grouped by the first word are 1, therefore their mean is 1*
+```{r}
+dt.mle2[, sum(prob), by=x1][, mean(V1)]
+```
+*The sums of 2-gram probabilities grouped by the second word are not 1, however their mean is also 1*
+```{r}
+dt.mle2[, sum(prob), by=y][, mean(V1)]
+```
+*3-gram property?*
+```{r}
+(bigram1AvgProb <- dt.mle3[, sum(prob), by=.(x1,x2)][, mean(V1)])
+(bigram2AvgProb <- dt.mle3[, sum(prob), by=.(x2,y)][, mean(V1)])
+bigram1AvgProb / bigram2AvgProb
+```
+```{r}
+(unigram1AvgProb <- dt.mle3[, sum(prob), by=.(x1)][, mean(V1)])
+(unigram2AvgProb <- dt.mle3[, sum(prob), by=.(x2)][, mean(V1)])
+(unigram3AvgProb <- dt.mle3[, sum(prob), by=.(y)][, mean(V1)])
+
+unigram1AvgProb / unigram2AvgProb
+unigram2AvgProb / unigram3AvgProb
+
+(unigram1AvgProb / unigram2AvgProb + unigram2AvgProb / unigram3AvgProb)/2
+```
+
+Functions
+```{r}
+histograms <- function() {
+    par(mfrow=c(5,4))
+    for(i in 1:5) {
+        dt<-paste0("dt.mle",i)
+        hist(get(dt)$frequency, main=paste0("Histogram of ",i,"-gram Frequency"))
+            abline(v=mean(get(dt)$frequency),col=2,lwd=2)
+        hist(log(get(dt)$frequency), main=paste0("Histogram of ",i,"-gram log-Frequency"))
+            abline(v=mean(log(get(dt)$frequency)),col=2,lwd=2)
+        hist(get(dt)$prob, main=paste0("Histogram of ",i,"-gram MLE"))
+            abline(v=mean(get(dt)$prob),col=2,lwd=2)
+        hist(log(get(dt)$prob), main=paste0("Histogram of ",i,"-gram log-MLE"))
+            abline(v=mean(log(get(dt)$prob)),col=2,lwd=2)
+    }
+}
+summary.ngrams <- function() {
+    minfreq <- c(min(dt.mle1$frequency), min(dt.mle2$frequency), min(dt.mle3$frequency), min(dt.mle4$frequency), min(dt.mle5$frequency))
+    dt <- data.table(n=1:5,
+                     nrow=c(nrow(dt.mle1), nrow(dt.mle2), nrow(dt.mle3), nrow(dt.mle4), nrow(dt.mle5)),
+                     minfreq=minfreq,
+                     nminfreq=c(sum(dt.mle1$frequency==minfreq[1]), sum(dt.mle2$frequency==minfreq[2]), sum(dt.mle3$frequency==minfreq[3]),
+                                sum(dt.mle4$frequency==minfreq[4]), sum(dt.mle5$frequency==minfreq[5])))
+    dt[, minfreq.p:=nminfreq/nrow]
+    
+    
+    maxfreq <- c(max(dt.mle1$frequency), max(dt.mle2$frequency), max(dt.mle3$frequency), max(dt.mle4$frequency),max(dt.mle5$frequency))
+    dt[, maxfreq:=maxfreq]
+    dt[, nmaxfreq:=c(sum(dt.mle1$frequency==maxfreq[1]), sum(dt.mle2$frequency==maxfreq[2]), sum(dt.mle3$frequency==maxfreq[3]),
+                     sum(dt.mle4$frequency==maxfreq[4]), sum(dt.mle5$frequency==maxfreq[5]))]
+    dt[, maxfreq.p:=nmaxfreq/nrow]    
+    
+    
+    minprob <- c(min(dt.mle1$prob), min(dt.mle2$prob), min(dt.mle3$prob), min(dt.mle4$prob),min(dt.mle5$prob))
+    dt[, minprob:= minprob]
+    dt[, nminprob:=c(sum(dt.mle1$prob==minprob[1]), sum(dt.mle2$prob==minprob[2]), sum(dt.mle3$prob==minprob[3]),
+                     sum(dt.mle4$prob==minprob[4]), sum(dt.mle5$prob==minprob[5]))]
+    dt[, minprob.p:=nminprob/nrow]
+    
+    
+    maxprob <- c(max(dt.mle1$prob), max(dt.mle2$prob), max(dt.mle3$prob), max(dt.mle4$prob),max(dt.mle5$prob))
+    dt[, maxprob:=maxprob]
+    dt[, nmaxprob:=c(sum(dt.mle1$prob==maxprob[1]), sum(dt.mle2$prob==maxprob[2]), sum(dt.mle3$prob==maxprob[3]),
+                     sum(dt.mle4$prob==maxprob[4]), sum(dt.mle5$prob==maxprob[5]))]
+    dt[, maxprob.p:=nmaxprob/nrow]
+    
+    dt[, minlogprob:=c(min(log(dt.mle1$prob)), min(log(dt.mle2$prob)), min(log(dt.mle3$prob)),
+                        min(log(dt.mle4$prob)), min(log(dt.mle5$prob)))]
+    dt[, meanlogprob:=c(mean(log(dt.mle1$prob)), mean(log(dt.mle2$prob)), mean(log(dt.mle3$prob)),
+                        mean(log(dt.mle4$prob)), mean(log(dt.mle5$prob)))]
+    dt[, maxlogprob:=c(max(log(dt.mle1$prob)), max(log(dt.mle2$prob)), max(log(dt.mle3$prob)),
+                       max(log(dt.mle4$prob)), max(log(dt.mle5$prob)))]
+    dt[]
+}
+perplexity <- function(x, verbose=FALSE) {
+    require(data.table); require(quanteda)
+    sentences <- tokens(x, what="sentence")
+    # taggedSentences <- paste("#s#", sentences , "#e#")
+    taggedSentences <- paste(sentences)
+    ret <- unlist(lapply(taggedSentences, function(sentence) {
+        tokens <- tokens(sentence, remove_numbers=T, remove_punct=T, remove_symbols=T,
+                         remove_separators=T, remove_twitter=FALSE, remove_hyphens=T, remove_url=T)
+        tokens <- tokens_remove(tokens, max_nchar = 20L)
+        tokens <- tokens_tolower(tokens, keep_acronyms = FALSE)
+        #
+        tokens <- as.tokens(lapply(tokens, function(token) {
+            ifelse(is.na(dt.mle1[token, on="x1"]$prob),"#u#",token)
+        }))
+        #if(verbose) print(tokens)
+        bigrams <- as.data.table(textstat_frequency(dfm(tokens, tolower=FALSE, ngrams=2, concatenator=" "))[, 1:2])
+        setnames(bigrams, "feature", "x1")
+        bigrams[, c("x1", "y") := tstrsplit(x1, " ", fixed=TRUE)]
+        #setcolorder(bigrams, c("x1", "y", "frequency"))
+        #bigrams[, prob := frequency / unigrams[.SD, frequency, on="x1"]]
+        bigrams[, prob := dt.mle2[.SD, prob, on=c(x1="x1", y="y")]]
+        if(verbose) print(bigrams[])
+        prod(bigrams$prob) ^ (-1/ntoken(tokens))
+        #or prod(1/bigrams$prob) ^ (1/ntoken(tokens))
+    }))
+    # if(length(ret)>1) names(ret) <- sentences
+    # else names(ret) <- NULL
+    names(ret) <- sentences
+    ret
+}
+p2gram <- function(x) {
+    tokens <- tokens(x, remove_numbers=T, remove_punct=T, remove_symbols=T,
+                     remove_separators=T, remove_twitter=FALSE, remove_hyphens=T, remove_url=T)
+    tokens <- tokens_remove(tokens, max_nchar = 20L)
+    tokens <- tokens_tolower(tokens, keep_acronyms = FALSE)
+    tokens <- tokens(tokens, ngrams=2L, concatenator=" ")
+    ret <- unlist(lapply(strsplit(unlist(tokens), " "), function(token) dt.mle2[.(token[1], token[2]), prob, on=c("x1","y")]))
+    names(ret) <- unlist(tokens)
+    ret
+}
+f2gram <- function(x) {
+    tokens <- tokens(x, remove_numbers=T, remove_punct=T, remove_symbols=T,
+                     remove_separators=T, remove_twitter=FALSE, remove_hyphens=T, remove_url=T)
+    tokens <- tokens_remove(tokens, max_nchar = 20L)
+    tokens <- tokens_tolower(tokens, keep_acronyms = FALSE)
+    tokens <- tokens(tokens, ngrams=2L, concatenator=" ")
+    ret <- unlist(lapply(strsplit(unlist(tokens), " "), function(token) dt.mle2[.(token[1], token[2]), frequency, on=c("x1","y")]))
+    names(ret) <- unlist(tokens)
+    ret
+}
+perplexityRanges <- function() {
+    pp <- data.table(scenario=c("Most likely bigram",
+                                "Most likely bigram whose probability <  1",
+                                # "Most frequent bigram",
+                                "Least likely bigram",
+                                "Most likely bigram with an unknown second word",
+                                "Most likely bigram with an unknown second word whose probability <  1",
+                                # "Most frequent bigram with an unknown second word",
+                                "Least likely bigram with an unknown second word",
+                                "Most likely bigram with an unknown first word",
+                                # "Most frequent bigram with an unknown first word",
+                                "Least likely bigram with an unknown first word",
+                                "Bigram with two unknown words"),
+                     bigram=c(dt.mle2[x1!="#s#" & y!="#e#"][order(-prob,-frequency)][1][,paste(x1,y)],
+                              dt.mle2[x1!="#s#" & y!="#e#" & prob<1][order(-prob,-frequency)][1][,paste(x1,y)],
+                              # dt.mle2[x1!="#s#" & y!="#e#"][order(-frequency,-prob)][1][,paste(x1,y)],
+                              dt.mle2[x1!="#s#" & y!="#e#"][order(prob,frequency)][1][,paste(x1,y)],
+                              dt.mle2[x1!="#s#" & y=="#u#"][order(-prob,-frequency)][1][,paste(x1,y)],
+                              dt.mle2[x1!="#s#" & y=="#u#" & prob<1][order(-prob,-frequency)][1][,paste(x1,y)],
+                              # dt.mle2[x1!="#s#" & y=="#u#"][order(-frequency,-prob)][1][,paste(x1,y)],
+                              dt.mle2[x1!="#s#" & y=="#u#"][order(prob,frequency)][1][,paste(x1,y)],
+                              dt.mle2[x1=="#u#" & y!="#e#"][order(-prob,-frequency)][1][,paste(x1,y)],
+                              # dt.mle2[x1=="#u#" & y!="#e#"][order(-frequency,-prob)][1][,paste(x1,y)],
+                              dt.mle2[x1=="#u#" & y!="#e#"][order(prob,frequency)][1][,paste(x1,y)],
+                              dt.mle2[x1=="#u#" & y=="#u#"][order(prob,frequency)][1][,paste(x1,y)]))
+    pp[,perplexity:=perplexity(gsub("#u#","unknownword",bigram))]
+    pp[,frequency:=f2gram(bigram)]
+    pp[,probability:=p2gram(bigram)]
+    pp[order(perplexity)]
+}
+```
+
+## Histograms
+
+```{r fig.height=10, fig.width=10}
+histograms() 
+```
+
+## Summary
+
+```{r}
+summary.ngrams()
+```
+
+## Perplexity
+
+Ranges
+```{r}
+perplexityRanges()
+```
+
+Perplexity of quiz 2 sentences
+```{r}
+quiz2 <- c("The guy in front of me just bought a pound of bacon, a bouquet, and a case of",
+           "You're the reason why I smile everyday. Can you follow me please? It would mean the",
+           "Hey sunshine, can you follow me and make me the",
+           "Very early observations on the Bills game: Offense still struggling but the",
+           "Go on a romantic date at the",
+           "Well I'm pretty sure my granny has some old bagpipes in her garage I'll dust them off and be on my",
+           "Ohhhhh #PointBreak is on tomorrow. Love that film and haven't seen it in quite some",
+           "After the ice bucket challenge Louis will push his long wet hair out of his eyes with his little",
+           "Be grateful for the good times and keep the faith during the",
+           "If this isn't the cutest thing you've ever seen, then you must be")
+sort(perplexity(quiz2), na.last=FALSE)
+```
+
+# Interpolation (suspended)
+
+```{r}
+## Simple interpolation
+# lambdas <- function(n, i) {
+#     #(rep(1,n)/n)[i]
+# }
+# dt.mle5[, prob:=
+#             lambdas(5,1) * prob +
+#             lambdas(5,2) * dt.mle4[.SD, prob, on=c(x1="x2", x2="x3", x3="x4", y="y")] +
+#             lambdas(5,3) * dt.mle3[.SD, prob, on=c(x1="x3", x2="x4", y="y")] +
+#             lambdas(5,4) * dt.mle2[.SD, prob, on=c(x1="x4", y="y")] +
+#             lambdas(5,5) * dt.mle1[.SD, prob, on=c(x1="y")]]
+# dt.mle4[, prob:=
+#             lambdas(4,1) * prob +
+#             lambdas(4,2) * dt.mle3[.SD, prob, on=c(x1="x2", x2="x3", y="y")] +
+#             lambdas(4,3) * dt.mle2[.SD, prob, on=c(x1="x3", y="y")] +
+#             lambdas(4,4) * dt.mle1[.SD, prob, on=c(x1="y")]]
+# dt.mle3[, prob:=
+#             lambdas(3,1) * prob +
+#             lambdas(3,2) * dt.mle2[.SD, prob, on=c(x1="x2", y="y")] +
+#             lambdas(3,3) * dt.mle1[.SD, prob, on=c(x1="y")]]
+# dt.mle2[, prob:=
+#             lambdas(2,1) * prob +
+#             lambdas(2,2) * dt.mle1[.SD, prob, on=c(x1="y")]]
+# gc()
+# histograms() 
+# summary.ngrams()
+# perplexityRanges()
+# sort(perplexity(quiz2), na.last=FALSE)
+```
+
+# Remove singletons (suspended)
+
+```{r}
+# bundleSize <- function() print(object.size(dt.mle1)+object.size(dt.mle2)+object.size(dt.mle3)+object.size(dt.mle4)+object.size(dt.mle5), units="MB")
+# bundleSize() #8646.8 Mb
+# dt.mle5 <- dt.mle5[frequency>1]
+# # bundleSize() #5014.5 Mb
+# dt.mle4 <- dt.mle4[frequency>1]
+# # bundleSize() #2396.2 Mb
+# dt.mle3 <- dt.mle3[frequency>1]
+# # bundleSize() #1156.1 Mb
+# dt.mle2 <- dt.mle2[frequency>1]
+# bundleSize() #921.6 Mb
+# gc()
+# histograms() 
+# summary.ngrams()
+# perplexityRanges()
+# sort(perplexity(quiz2), na.last=FALSE)
+```
+
+# Prediction functions
+```{r}
+predict.nextword <- function(x, method="frequency", maxwords=4) {
+    require(data.table); require(quanteda)
+    sentences <- unlist(tokens(x, what="sentence"))
+    lastSentence <- sentences[length(sentences)]
+    xs <- tokens(lastSentence, remove_numbers=T, remove_punct=T, remove_symbols=T,
+                 remove_separators=T, remove_twitter=FALSE, remove_hyphens=T, remove_url=T)
+    xs <- tokens_remove(xs, max_nchar = 20L)
+    xs <- unlist(tokens_tolower(xs, keep_acronyms = FALSE))
+    xs <- xs[(max(length(xs), maxwords)-(maxwords-1)):length(xs)]
+    xs <- sapply(xs, function(x) ifelse(is.na(dt.mle1[x]$prob), "#u#", x))
+    while(length(xs) > 0) {
+        dt <- paste0("dt.mle", length(xs)+1)
+        names(xs) <- paste0("x",1:length(xs))
+        partialMatch <- data.table(t(xs))
+        beginningMatch <- data.table(t(c(x1="#s#",xs[-1])))
+        if(method=="frequency") {
+            partialAnswer <- get(dt)[partialMatch, on=paste0("x",1:length(xs))][order(-frequency, -prob)]
+            if(length(xs)>1)
+                beginningAnswer <- get(dt)[beginningMatch, on=paste0("x",1:length(xs))][order(-frequency, -prob)]
+        }
+        else if(method=="probability") {
+            partialAnswer <- get(dt)[partialMatch, on=paste0("x",1:length(xs))][order(-prob, -frequency)]
+            if(length(xs)>1)
+                beginningAnswer <- get(dt)[beginningMatch, on=paste0("x",1:length(xs))][order(-prob, -frequency)]
+        }
+        else stop("invalid method")
+        #if(length(y) != 0) return(y)
+        print(partialAnswer)
+        if(length(xs)>1)
+            print(beginningAnswer)
+        xs <- xs[-1]
+    }
+    invisible(character(0))
+}
+rank.answers <- function(x, answers, method="frequency", maxwords=4) {
+    require(data.table); require(quanteda)
+    sentences <- unlist(tokens(x, what="sentence"))
+    lastSentence <- sentences[length(sentences)]
+    xs <- tokens(lastSentence, remove_numbers=T, remove_punct=T, remove_symbols=T,
+                 remove_separators=T, remove_twitter=FALSE, remove_hyphens=T, remove_url=T)
+    xs <- tokens_remove(xs, max_nchar = 20L)
+    xs <- unlist(tokens_tolower(xs, keep_acronyms = FALSE))
+    xs <- xs[(max(length(xs), maxwords)-(maxwords-1)):length(xs)]
+    xs <- sapply(xs, function(x) ifelse(is.na(dt.mle1[x]$prob), "#u#", x))
+    for(n in 5:2) {
+        dt <- paste0("dt.mle", n)
+        names(xs) <- paste0("x",1:length(xs))
+        partialMatch <- data.table(t(xs))
+        partialAnswer <- get(dt)[partialMatch, on=paste0("x", 1:(n-1))][y %in% answers]
+        if(n>2) {
+            beginningMatch <- data.table(t(c(x1="#s#",xs[-1])))
+            beginningAnswer <- get(dt)[beginningMatch, on=paste0("x", 1:(n-1))][y %in% answers]
+        }
+        if(method=="frequency") {
+            partialAnswer <- partialAnswer[order(-frequency, -prob)]
+            if(n>2) beginningAnswer <- beginningAnswer[order(-frequency, -prob)]
+        } else if(method=="probability") {
+            partialAnswer <- partialAnswer[order(-prob, -frequency)]
+            if(n>2) beginningAnswer <- beginningAnswer[order(-prob, -frequency)]
+        } else stop("invalid method")
+        print(partialAnswer)
+        if(n>2) print(beginningAnswer)
+        xs <- xs[-1]
+    }
+}
+```
+
+

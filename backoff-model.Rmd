@@ -1,0 +1,227 @@
+---
+title: "Backoff prediction model"
+author: "Maurício Collaça"
+date: "April 24, 2018"
+output: 
+  html_document: 
+    code_folding: hide
+    number_sections: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment = "")
+options(width = 120)
+```
+
+```{r message=FALSE}
+library(data.table); library(quanteda)
+```
+
+```{r}
+dataDir <- "~/dsscapstone"
+```
+
+```{r}
+nchunks <- function(x, factor) {
+    objsize <- as.numeric(object.size(x))
+    gc()
+    available <- (memory.limit()-memory.size())*1024^2
+    available <- max(available, objsize*(1.01))
+    ceiling((factor*objsize)/(available-objsize))
+}
+chunks <- function(x, factor) {
+    objsize <- as.numeric(object.size(x))
+    gc()
+    available <- (memory.limit()-memory.size())*1024^2
+    available <- max(available, objsize*(1.01))
+    nchunks <- ceiling((factor*objsize)/(available-objsize))
+    rep(1:nchunks, each=ceiling(nrow(x)/nchunks), length.out=nrow(x))
+}
+```
+
+```{r}
+file <- file.path(dataDir, "dt5.rda")
+if (!file.exists(file)) { #323s
+    t0<-proc.time()
+    load(file.path(dataDir, "dt.5gram.rda")) #6.1GB
+    dt.5gram <- dt.5gram[frequency>1]
+    setnames(dt.5gram, "feature", "x1")
+    dt.5gram[, c("x1","x2","x3","x4","y") := tstrsplit(x1, " ", fixed=TRUE)]
+    dt.5gram[, c("x1","x2","x3","x4","y") := .(factor(x1), factor(x2), factor(x3), factor(x4), factor(y))]
+    setcolorder(dt.5gram, c("x1", "x2", "x3", "x4", "y", "frequency"))
+    ################################
+    dt.5gram <- dt.5gram[!y %in% c("#e#", "#u#")]
+    setorder(dt.5gram, x1, x2, x3, x4, y)
+    # dt.5gram <- dt.5gram[dt.5gram[, .I[frequency == max(frequency)], by=.(x1,x2,x3,x4)]$V1]
+    dt.5gram <- dt.5gram[dt.5gram[, .I[which.max(frequency)], by=.(x1,x2,x3,x4)]$V1] # 66.1MB
+    setkey(dt.5gram, x1, x2, x3, x4)
+    ################################
+    dt5 <- dt.5gram
+    save(dt5, file=file, compress=FALSE)
+    rm(dt.5gram)
+    gc()
+    proc.time()-t0
+} else load(file)
+```
+
+```{r}
+file <- file.path(dataDir, "dt4.rda")
+if (!file.exists(file)) { #242s
+    t0<-proc.time()
+    load(file.path(dataDir, "dt.4gram.rda")) #5.3GB
+    dt.4gram <- dt.4gram[frequency>1]
+    setnames(dt.4gram, "feature", "x1")
+    dt.4gram[, c("x1","x2","x3","y") := tstrsplit(x1, " ", fixed=TRUE)]
+    dt.4gram[, c("x1","x2","x3","y") := .(factor(x1), factor(x2), factor(x3), factor(y))]
+    setcolorder(dt.4gram, c("x1", "x2", "x3", "y", "frequency"))
+    ################################
+    dt.4gram <- dt.4gram[!y %in% c("#e#", "#u#")]
+    setorder(dt.4gram, x1, x2, x3, y)
+    # dt.4gram <- dt.4gram[dt.4gram[, .I[frequency == max(frequency)], by=.(x1,x2,x3)]$V1]
+    dt.4gram <- dt.4gram[dt.4gram[, .I[which.max(frequency)], by=.(x1,x2,x3)]$V1] #68.3MB
+    setkey(dt.4gram, x1, x2, x3)
+    ################################
+    dt4 <- dt.4gram
+    save(dt4, file=file, compress=FALSE)
+    rm(dt.4gram)
+    gc()
+    proc.time()-t0
+} else load(file)
+```
+
+```{r}
+file <- file.path(dataDir, "dt3.rda")
+if (!file.exists(file)) { #316s
+    t0<-proc.time()
+    load(file.path(dataDir, "dt.3gram.rda")) #3.2GB
+    setnames(dt.3gram, "feature", "x1")
+    dt.3gram[, chunk:=chunks(dt.3gram, factor = 3)]
+    dt.3gram <- split(dt.3gram, by="chunk", keep.by=FALSE)
+    dt.3gram <- rbindlist(lapply(dt.3gram, function(DT) DT[, c("x1","x2","y") := tstrsplit(x1, " ", fixed=TRUE)]))
+    dt.3gram[, c("x1","x2","y") := .(factor(x1), factor(x2), factor(y))] #
+    setcolorder(dt.3gram, c("x1", "x2", "y", "frequency"))
+    ################################
+    dt.3gram <- dt.3gram[!y %in% c("#e#", "#u#")]
+    setorder(dt.3gram, x1, x2, y)
+    # dt.3gram <- dt.3gram[dt.3gram[, .I[frequency == max(frequency)], by=.(x1,x2)]$V1]
+    dt.3gram <- dt.3gram[dt.3gram[, .I[which.max(frequency)], by=.(x1,x2)]$V1] #220MB
+    setkey(dt.3gram, x1, x2)
+    ################################
+    dt3 <- dt.3gram
+    save(dt3, file=file, compress=FALSE)
+    rm(dt.3gram)
+    gc()
+    proc.time()-t0
+} else load(file)
+```
+
+```{r}
+file <- file.path(dataDir, "dt2.rda")
+if (!file.exists(file)) { #57s
+    t0<-proc.time()
+    load(file.path(dataDir, "dt.2gram.rda")) #851.8MB
+    setnames(dt.2gram, "feature", "x1")
+    dt.2gram[, c("x1","y") := tstrsplit(x1, " ", fixed=TRUE)]
+    dt.2gram[, c("x1","y") := .(factor(x1), factor(y))]
+    setcolorder(dt.2gram, c("x1", "y", "frequency"))
+    ################################
+    dt.2gram <- dt.2gram[!y %in% c("#e#", "#u#")]
+    setorder(dt.2gram, x1, y)
+    # dt.2gram <- dt.2gram[dt.2gram[, .I[frequency == max(frequency)], by=.(x1)]$V1]
+    dt.2gram <- dt.2gram[dt.2gram[, .I[which.max(frequency)], by=x1]$V1] #34.7
+    setkey(dt.2gram, x1)
+    ################################
+    dt2 <- dt.2gram
+    save(dt2, file=file, compress=FALSE)
+    rm(dt.2gram)
+    gc()
+    proc.time()-t0
+} else load(file)
+```
+```{r}
+file <- file.path(dataDir, "dt1.rda")
+if (!file.exists(file)) { #2s
+    t0<-proc.time()
+    load(file.path(dataDir, "dt.1gram.rda")) #16.9MB
+    setnames(dt.1gram, "feature", "x1")
+    dt.1gram <- dt.1gram[!x1 %in% c("#s#", "#e#", "#u#")]
+    # dt.1gram[, x1 := factor(x1)] #17.9
+    setkey(dt.1gram, x1)
+    dt1 <- dt.1gram
+    save(dt1, file=file, compress=FALSE)
+    rm(dt.1gram)
+    gc()
+    proc.time()-t0
+} else {
+    load(file)
+}
+```
+
+```{r}
+as.numeric(object.size(dt1)+object.size(dt2)+object.size(dt3)+object.size(dt4)+object.size(dt5))/1024/1024
+```
+
+# Prediction functions
+```{r}
+predict.nextword <- function(x, maxwords=4) {
+    require(data.table); require(quanteda)
+    sentences <- unlist(tokens(x, what="sentence"))
+    lastSentence <- sentences[length(sentences)]
+    xs <- tokens(lastSentence, remove_numbers=T, remove_punct=T, remove_symbols=T,
+                 remove_separators=T, remove_twitter=FALSE, remove_hyphens=T, remove_url=T)
+    xs <- tokens_remove(xs, max_nchar = 20L)
+    xs <- unlist(tokens_tolower(xs, keep_acronyms = FALSE), use.names = FALSE)
+    xs <- xs[(max(length(xs), maxwords)-(maxwords-1)):length(xs)]
+    xs <- sapply(xs, function(x) ifelse(is.na(dt1[x]$frequency), "#u#", x))
+    while(length(xs) > 0) {
+        dt <- paste0("dt", length(xs)+1)
+        names(xs) <- paste0("x",1:length(xs))
+        partialMatch <- data.table(t(xs))
+        partialAnswer <- get(dt)[partialMatch, as.character(y), on=paste0("x",1:length(xs))]
+        if(!is.na(partialAnswer)) return(partialAnswer)
+        if(length(xs)>1) {
+            beginningMatch <- data.table(t(c(x1="#s#",xs[-1])))
+            beginningAnswer <- get(dt)[beginningMatch, as.character(y), on=paste0("x",1:length(xs))]
+            if(!is.na(beginningAnswer)) return(beginningAnswer)
+        }
+        #if(length(y) != 0) return(y)
+        xs <- xs[-1]
+    }
+    # invisible(character(0))
+    dt1[order(-frequency)][1]$x1
+}
+predict.nextword("In the years thereafter, most of the Oil fields and platforms were named after pagan") #gods
+predict.nextword("We love you Mr.") #brown
+predict.nextword("Chad has been awesome with the kids and holding down the fort while I work later than") #usual
+predict.nextword("The kids have been busy together playing Skylander on the XBox together, after Kyan cashed in his $$$ from his piggy") #bank
+predict.nextword("He wanted that game so bad and used his gift card from his birthday he has been saving and the money to get it (he never taps into that thing either, that is how we know he wanted it so") #bad
+```
+
+```{r}
+rank.answers <- function(x, answers, maxwords=4) {
+    require(data.table); require(quanteda)
+    sentences <- unlist(tokens(x, what="sentence"))
+    lastSentence <- sentences[length(sentences)]
+    xs <- tokens(lastSentence, remove_numbers=T, remove_punct=T, remove_symbols=T,
+                 remove_separators=T, remove_twitter=FALSE, remove_hyphens=T, remove_url=T)
+    xs <- tokens_remove(xs, max_nchar = 20L)
+    xs <- unlist(tokens_tolower(xs, keep_acronyms = FALSE))
+    xs <- xs[(max(length(xs), maxwords)-(maxwords-1)):length(xs)]
+    xs <- sapply(xs, function(x) ifelse(is.na(dt1[x]$frequency), "#u#", x))
+    for(n in 5:2) {
+        dt <- paste0("dt", n)
+        names(xs) <- paste0("x",1:length(xs))
+        partialMatch <- data.table(t(xs))
+        partialAnswer <- get(dt)[partialMatch, on=paste0("x", 1:(n-1))][y %in% answers]
+        print(partialAnswer)
+        if(n>2) {
+            beginningMatch <- data.table(t(c(x1="#s#",xs[-1])))
+            beginningAnswer <- get(dt)[beginningMatch, on=paste0("x", 1:(n-1))][y %in% answers]
+            print(beginningAnswer)
+        }
+        xs <- xs[-1]
+    }
+}
+```
+
+
