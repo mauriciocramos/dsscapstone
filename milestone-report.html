@@ -168,7 +168,7 @@ $(document).ready(function () {
 <pre class="r"><code>packages &lt;- c(&quot;parallel&quot;, &quot;quanteda&quot;, &quot;gridExtra&quot;, &quot;ggplot2&quot;, &quot;data.table&quot;)
 noquote(c(R=paste(R.Version()[6:7], collapse=&quot;.&quot;), sapply(packages, function(x) {library(x, character.only=T, logical.return=T); as.character(packageVersion(x))})))</code></pre>
 <pre><code>         R   parallel   quanteda  gridExtra    ggplot2 data.table 
-     3.4.4      3.4.4      1.2.0        2.3      2.2.1   1.10.4.3 </code></pre>
+     3.4.4      3.4.4      1.2.0        2.3      2.2.1     1.11.2 </code></pre>
 </div>
 <div id="getting-data" class="section level1">
 <h1><span class="header-section-number">3</span> Getting Data</h1>
@@ -327,6 +327,7 @@ corpora1.summary</code></pre>
 <li>Remove URLs</li>
 <li>Remove unlikely words longer than 20 characters, based on <a href="https://en.wikipedia.org/wiki/Longest_word_in_English#cite_note-14">Wikipedia’s citation</a></li>
 <li>Lowercasing</li>
+<li>Replacing rare tokens (frequency &gt; 1) with an unknown word tag “#u#”</li>
 </ul>
 <pre class="r"><code>for (doc in docs) { # 46min
     #vvvvv
@@ -461,7 +462,7 @@ for(ngram in seq_along(topfeatures.bydoc)) {
 <p>The proposal is to develop a prediction algorithm that does the following:</p>
 <ul>
 <li><p>takes the last <em>n</em> words from a given text, limited to a maximum of 4 words, and look for the next word in a <em>n+1</em> n-gram table.</p></li>
-<li><p>To improve the chances to find a next word, if the <em>n</em> words are not found in the <em>n+1</em> n-gram table, the algorithm shall successively fall back to look for the last <em>n-1</em> words in thea lower order <em>n</em>-gram tables.</p></li>
+<li><p>To improve the chances to find a next word, if the <em>n</em> words are not found in the <em>n+1</em> n-gram table, the algorithm shall successively fall back to look for the last <em>n-1</em> words in lower order <em>n</em>-gram tables.</p></li>
 </ul>
 </div>
 
